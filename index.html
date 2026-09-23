@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#000000" />
+  <title>NOCLIP</title>
+  <link rel="stylesheet" href="./src/style.css" />
+</head>
+<body>
+  <div id="game"></div>
+
+  <!-- HUD -->
+  <div id="hud" class="hidden">
+    <div id="hud-top">
+      <div id="level-name"></div>
+      <div id="objective"></div>
+    </div>
+    <div id="bars">
+      <div class="bar"><span>正気</span><div class="track"><div id="bar-sanity" class="fill sanity"></div></div></div>
+      <div class="bar"><span>体力</span><div class="track"><div id="bar-stamina" class="fill stamina"></div></div></div>
+      <div class="bar"><span>電池</span><div class="track"><div id="bar-battery" class="fill battery"></div></div></div>
+    </div>
+    <div id="inventory"><span id="water-count">0</span> アーモンド水 <small>(Q / 飲む)</small></div>
+    <div id="message"></div>
+    <div id="crosshair"></div>
+    <button id="btn-pause" class="icon-btn" aria-label="一時停止">II</button>
+  </div>
+
+  <!-- タッチ操作 -->
+  <div id="touch" class="hidden">
+    <div id="stick-zone"><div id="stick-base"><div id="stick-knob"></div></div></div>
+    <div id="look-zone"></div>
+    <div id="touch-buttons">
+      <button id="btn-run" class="tbtn">走る</button>
+      <button id="btn-light" class="tbtn">ライト</button>
+      <button id="btn-drink" class="tbtn small">飲む</button>
+      <button id="btn-crouch" class="tbtn small">しゃがむ</button>
+    </div>
+  </div>
+
+  <!-- 画面 -->
+  <div id="screen-title" class="screen">
+    <div class="title-wrap">
+      <h1 class="glitch" data-text="NOCLIP">NOCLIP</h1>
+      <p class="sub">― 裏側の階層 ―</p>
+      <div class="menu">
+        <button id="btn-new">はじめから</button>
+        <button id="btn-continue">つづきから</button>
+        <button id="btn-settings">設定</button>
+        <button id="btn-howto">あそびかた</button>
+      </div>
+      <p class="warn">ヘッドホン推奨 / 大きな音や点滅表現があります</p>
+    </div>
+  </div>
+
+  <div id="screen-settings" class="screen hidden">
+    <div class="panel">
+      <h2>設定</h2>
+      <label>視点感度 <input id="set-sens" type="range" min="0.3" max="2.5" step="0.1" /></label>
+      <label>画質(描画解像度) <select id="set-quality">
+        <option value="0.5">低 (軽い)</option>
+        <option value="0.75">中</option>
+        <option value="1">高</option>
+      </select></label>
+      <label>音量 <input id="set-volume" type="range" min="0" max="1" step="0.05" /></label>
+      <label class="check"><input id="set-invert" type="checkbox" /> 上下反転</label>
+      <label class="check"><input id="set-shake" type="checkbox" /> 画面の揺れ・ノイズ演出</label>
+      <button class="back">もどる</button>
+    </div>
+  </div>
+
+  <div id="screen-howto" class="screen hidden">
+    <div class="panel">
+      <h2>あそびかた</h2>
+      <p>あなたは現実から「noclip」し、終わりのない黄色い部屋へ落ちた。<br />各階層で<b>鍵となるアイテム</b>をすべて集め、<b>出口</b>から次の階層へ進もう。</p>
+      <ul>
+        <li><b>スマホ</b>：左側ドラッグで移動、右側ドラッグで視点。「走る」は押している間ダッシュ。</li>
+        <li><b>PC</b>：WASD移動 / マウス視点 / Shift走る / C しゃがむ / F ライト / Q 飲む / Esc 一時停止</li>
+        <li>走ると<b>足音</b>で「何か」に気づかれる。しゃがむと静かに動ける。</li>
+        <li>暗闇や「何か」の近くにいると<b>正気</b>が減る。アーモンド水で回復できる。</li>
+        <li>ライトは電池を消費する。落ちている電池で補充できる。</li>
+        <li>Level 1 の暗がりに浮かぶ<b>笑顔</b>には光を当てるな。</li>
+      </ul>
+      <button class="back">もどる</button>
+    </div>
+  </div>
+
+  <div id="screen-pause" class="screen hidden">
+    <div class="panel">
+      <h2>一時停止</h2>
+      <div class="menu">
+        <button id="btn-resume">つづける</button>
+        <button id="btn-pause-settings">設定</button>
+        <button id="btn-quit">タイトルへ</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="screen-note" class="screen hidden">
+    <div class="note-paper">
+      <div id="note-text"></div>
+      <button id="btn-note-close">閉じる</button>
+    </div>
+  </div>
+
+  <div id="screen-intro" class="screen hidden">
+    <div class="intro">
+      <div id="intro-level"></div>
+      <div id="intro-name"></div>
+      <div id="intro-desc"></div>
+    </div>
+  </div>
+
+  <div id="screen-dead" class="screen hidden">
+    <div class="panel dead">
+      <h2 id="dead-title">見つかった</h2>
+      <p id="dead-desc"></p>
+      <div class="menu">
+        <button id="btn-retry">この階層をやり直す</button>
+        <button id="btn-dead-quit">タイトルへ</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="screen-ending" class="screen hidden">
+    <div class="panel ending">
+      <h2>END</h2>
+      <div id="ending-text"></div>
+      <button id="btn-ending-quit">タイトルへ</button>
+    </div>
+  </div>
+
+  <div id="fade"></div>
+  <div id="scare"></div>
+  <div id="loading" class="hidden">生成中…</div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
