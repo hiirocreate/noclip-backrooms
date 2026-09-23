@@ -33,6 +33,15 @@
 
 ※ `android/` フォルダはワークフロー内で毎回生成します。全画面化・横画面固定・アイコンは `android-overrides/` の内容で上書きしています。
 
+## Web版の公開（GitHub Pages）
+
+1. このフォルダ一式を GitHub リポジトリの `main` ブランチへ push します。
+2. GitHub の **Settings → Pages → Build and deployment** で、Source を **GitHub Actions** に設定します。
+3. push 後に Actions の **Deploy Web Game to GitHub Pages** が完了すると、
+   `https://<GitHubユーザー名>.github.io/<リポジトリ名>/` でプレイできます。
+
+再公開は `main` への push ごとに自動で行われます。Actions タブから手動実行することも可能です。
+
 ## PCで動作確認する場合
 
 ```bash
