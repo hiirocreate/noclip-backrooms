@@ -1,4 +1,4 @@
-// 迷路(タイルマップ)の生成
+// 迷路(タイルマップ)の生成と、レベル側で使う配置ヘルパー
 export function mulberry32(seed) {
   let a = seed >>> 0;
   return function () {
@@ -9,19 +9,25 @@ export function mulberry32(seed) {
   };
 }
 
-export const FLOOR = 0, WALL = 1, PILLAR = 2;
-const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+// タイル種別
+export const FLOOR = 0, WALL = 1, PILLAR = 2, PROP = 3;
+export const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
-export function generateMap(cfg, seed) {
+/**
+ * m: レベル定義の map パラメータ
+ *  cells[w,h], braid, rooms, roomSize[min,max], pillarChance, pillarGrid(大部屋を柱の格子にする割合),
+ *  darkZones, lamp{pattern,density,broken,flicker}, sector(照明回路の区画サイズ)
+ */
+export function generateMap(m, seed) {
   const rnd = mulberry32(seed);
   const ri = (a, b) => a + Math.floor(rnd() * (b - a + 1));
-  const [cw, ch] = cfg.cells;
+  const [cw, ch] = m.cells;
   const W = cw * 2 + 1, H = ch * 2 + 1;
   const tiles = new Uint8Array(W * H).fill(WALL);
   const idx = (x, y) => y * W + x;
   const inside = (x, y) => x > 0 && y > 0 && x < W - 1 && y < H - 1;
 
-  // 1) 穴掘り法で迷路
+  // 1) 穴掘り法で「完全迷路」を作る(どの2点も必ずつながる)
   const visited = new Uint8Array(cw * ch);
   const stack = [[0, 0]];
   visited[0] = 1;
@@ -41,59 +47,58 @@ export function generateMap(cfg, seed) {
     stack.push([nx, ny]);
   }
 
-  // 2) ループ化(壁を抜く)
-  for (let y = 1; y < H - 1; y++) {
-    for (let x = 1; x < W - 1; x++) {
-      if (tiles[idx(x, y)] !== WALL) continue;
-      const horiz = x % 2 === 0 && y % 2 === 1;
-      const vert = x % 2 === 1 && y % 2 === 0;
-      if ((horiz || vert) && rnd() < cfg.braid * 0.5) tiles[idx(x, y)] = FLOOR;
-    }
+  // 2) ループ化。ここで開けた壁は「閉じても連結が切れない」ので、組み替わる壁に使える
+  const braidOpen = [];
+  for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
+    if (tiles[idx(x, y)] !== WALL) continue;
+    const horiz = x % 2 === 0 && y % 2 === 1;
+    const vert = x % 2 === 1 && y % 2 === 0;
+    if ((horiz || vert) && rnd() < m.braid * 0.5) { tiles[idx(x, y)] = FLOOR; braidOpen.push({ x, y }); }
   }
 
   // 3) 大部屋
   const roomTiles = new Uint8Array(W * H);
-  for (let r = 0; r < cfg.rooms; r++) {
-    const rw = ri(cfg.roomSize[0], cfg.roomSize[1]) * 2 - 1;
-    const rh = ri(cfg.roomSize[0], cfg.roomSize[1]) * 2 - 1;
+  const rooms = [];
+  for (let r = 0; r < (m.rooms || 0); r++) {
+    const rw = ri(m.roomSize[0], m.roomSize[1]) * 2 - 1;
+    const rh = ri(m.roomSize[0], m.roomSize[1]) * 2 - 1;
     const rx = 1 + ri(0, Math.max(0, W - 2 - rw));
     const ry = 1 + ri(0, Math.max(0, H - 2 - rh));
-    for (let y = ry; y < Math.min(H - 1, ry + rh); y++)
-      for (let x = rx; x < Math.min(W - 1, rx + rw); x++) { tiles[idx(x, y)] = FLOOR; roomTiles[idx(x, y)] = 1; }
+    const room = { x: rx, y: ry, w: Math.min(rw, W - 1 - rx), h: Math.min(rh, H - 1 - ry), grid: rnd() < (m.pillarGrid || 0) };
+    rooms.push(room);
+    for (let y = room.y; y < room.y + room.h; y++) for (let x = room.x; x < room.x + room.w; x++) {
+      tiles[idx(x, y)] = FLOOR; roomTiles[idx(x, y)] = rooms.length;
+    }
   }
+  // 部屋を開けたことで braidOpen の一部は部屋の一部になる → 組み替え対象から外す
+  const braid = braidOpen.filter(b => !roomTiles[idx(b.x, b.y)]);
 
-  // 4) 柱(8近傍がすべて床の所だけ → 連結性は保たれる)
-  for (let y = 2; y < H - 2; y++) {
-    for (let x = 2; x < W - 2; x++) {
-      if (!roomTiles[idx(x, y)] || rnd() > cfg.pillarChance) continue;
-      let ok = true;
-      for (let dy = -1; dy <= 1 && ok; dy++) for (let dx = -1; dx <= 1; dx++) if (tiles[idx(x + dx, y + dy)] !== FLOOR) { ok = false; break; }
-      if (ok) tiles[idx(x, y)] = PILLAR;
+  // 4) 柱(8近傍がすべて床の所だけ置くので連結性は保たれる)
+  const canPillar = (x, y) => {
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (tiles[idx(x + dx, y + dy)] !== FLOOR) return false;
+    return true;
+  };
+  for (const room of rooms) {
+    for (let y = room.y + 1; y < room.y + room.h - 1; y++) for (let x = room.x + 1; x < room.x + room.w - 1; x++) {
+      if (x < 2 || y < 2 || x > W - 3 || y > H - 3) continue;
+      const want = room.grid ? ((x - room.x) % 2 === 1 && (y - room.y) % 2 === 1) : rnd() < (m.pillarChance || 0);
+      if (want && canPillar(x, y)) tiles[idx(x, y)] = PILLAR;
     }
   }
 
   const start = { x: 1, y: 1 };
   const dist = bfs(tiles, W, H, start.x, start.y);
 
-  // 5) 出口：スタートから最も遠い、壁に面した床
-  let exit = null, best = -1;
-  for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
-    const d = dist[idx(x, y)];
-    if (d < 0 || d <= best) continue;
-    for (const [dx, dy] of DIRS) {
-      if (tiles[idx(x + dx, y + dy)] === WALL) { best = d; exit = { x, y, dx, dy }; break; }
-    }
-  }
-
-  // 6) 暗闇区画
-  const dark = new Uint8Array(W * H);
   const floorList = [];
   for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) if (tiles[idx(x, y)] === FLOOR) floorList.push({ x, y });
-  for (let z = 0; z < cfg.darkZones; z++) {
+
+  // 5) 暗闇区画
+  const dark = new Uint8Array(W * H);
+  for (let z = 0; z < (m.darkZones || 0); z++) {
     let c = null;
     for (let t = 0; t < 60; t++) {
       const p = floorList[Math.floor(rnd() * floorList.length)];
-      if (dist[idx(p.x, p.y)] > 10 && Math.abs(p.x - exit.x) + Math.abs(p.y - exit.y) > 5) { c = p; break; }
+      if (dist[idx(p.x, p.y)] > 10) { c = p; break; }
     }
     if (!c) continue;
     const rad = ri(3, 5);
@@ -101,9 +106,10 @@ export function generateMap(cfg, seed) {
       if (inside(x, y)) dark[idx(x, y)] = 1;
   }
 
-  // 7) 照明
+  // 6) 照明(回路 = 区画ごとにまとめて点いたり消えたりする)
   const lamps = [];
-  const L = cfg.lamp;
+  const L = m.lamp;
+  const sector = m.sector || 6;
   for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
     if (tiles[idx(x, y)] !== FLOOR || dark[idx(x, y)]) continue;
     if (x % L.pattern !== 1 || y % L.pattern !== 1) continue;
@@ -112,52 +118,14 @@ export function generateMap(cfg, seed) {
     let state = 'on';
     const r = rnd();
     if (!nearStart) { if (r < L.broken) state = 'off'; else if (r < L.broken + L.flicker) state = 'flicker'; }
-    lamps.push({ x, y, state });
-  }
-  // 出口の真上は必ず点灯
-  if (!lamps.some(l => l.x === exit.x && l.y === exit.y)) lamps.push({ x: exit.x, y: exit.y, state: 'on' });
-
-  // 8) アイテム配置
-  const used = new Set([idx(start.x, start.y), idx(exit.x, exit.y)]);
-  const pick = (minDist, avoid, preferDark = false) => {
-    let bestP = null, bestScore = -1;
-    for (let t = 0; t < 80; t++) {
-      const p = floorList[Math.floor(rnd() * floorList.length)];
-      const k = idx(p.x, p.y);
-      if (used.has(k) || dist[k] < minDist) continue;
-      let md = 999;
-      for (const a of avoid) md = Math.min(md, Math.abs(a.x - p.x) + Math.abs(a.y - p.y));
-      let score = Math.min(md, 30) + rnd() * 4 + (preferDark && dark[k] ? 8 : 0);
-      if (score > bestScore) { bestScore = score; bestP = p; }
-    }
-    if (bestP) used.add(idx(bestP.x, bestP.y));
-    return bestP;
-  };
-  const keys = [];
-  for (let i = 0; i < cfg.key.count; i++) {
-    const p = pick(8, [...keys, exit, start], i === cfg.key.count - 1 && cfg.darkZones > 0);
-    if (p) keys.push(p);
-  }
-  const pickups = [];
-  for (let i = 0; i < cfg.batteries; i++) { const p = pick(3, pickups.concat(keys)); if (p) pickups.push({ ...p, kind: 'battery' }); }
-  for (let i = 0; i < cfg.waters; i++) { const p = pick(4, pickups.concat(keys)); if (p) pickups.push({ ...p, kind: 'water' }); }
-  const notes = [];
-  cfg.notes.forEach((_, i) => {
-    const p = pick(i === 0 ? 2 : 10, notes.concat(keys));
-    if (p) notes.push({ ...p, note: i });
-  });
-  // 最初のメモはスタート付近に
-  if (notes[0]) {
-    for (const [dx, dy] of DIRS) {
-      const x = start.x + dx, y = start.y + dy;
-      if (tiles[idx(x, y)] === FLOOR) { used.delete(idx(notes[0].x, notes[0].y)); notes[0].x = x; notes[0].y = y; break; }
-    }
+    const circuit = (Math.floor(x / sector) + Math.floor(y / sector) * 3) % 4;
+    lamps.push({ x, y, state, circuit });
   }
 
-  return { W, H, tiles, dist, start, exit, dark, lamps, keys, pickups, notes, floorList, roomTiles };
+  return { W, H, tiles, dist, start, dark, lamps, floorList, rooms, roomTiles, braid, rnd, seed, props: new Map() };
 }
 
-export function bfs(tiles, W, H, sx, sy) {
+export function bfs(tiles, W, H, sx, sy, blocked) {
   const dist = new Int32Array(W * H).fill(-1);
   const q = new Int32Array(W * H);
   let h = 0, t = 0;
@@ -166,8 +134,56 @@ export function bfs(tiles, W, H, sx, sy) {
     const c = q[h++]; const cx = c % W, cy = (c / W) | 0;
     for (const [dx, dy] of DIRS) {
       const n = (cy + dy) * W + cx + dx;
-      if (tiles[n] === FLOOR && dist[n] < 0) { dist[n] = dist[c] + 1; q[t++] = n; }
+      if (tiles[n] === FLOOR && dist[n] < 0 && !(blocked && blocked(n))) { dist[n] = dist[c] + 1; q[t++] = n; }
     }
   }
   return dist;
+}
+
+/* ---------- 配置ヘルパー(レベル側から使う) ---------- */
+export function tileIdx(map, x, y) { return y * map.W + x; }
+
+// 床タイルから見て壁(WALL)に面している面の一覧
+export function wallFaces(map, filter) {
+  const out = [];
+  const { W, tiles } = map;
+  for (const p of map.floorList) {
+    if (tiles[p.y * W + p.x] !== FLOOR) continue;
+    for (const [dx, dy] of DIRS) {
+      if (tiles[(p.y + dy) * W + p.x + dx] === WALL && (!filter || filter(p, dx, dy))) out.push({ x: p.x, y: p.y, dx, dy });
+    }
+  }
+  return out;
+}
+
+// 既に使った場所から離れた床タイルを選ぶ
+export function pickTile(map, used, { minDist = 0, maxDist = 1e9, avoid = [], spread = 4, filter } = {}) {
+  const { rnd, dist, W } = map;
+  let best = null, bestScore = -1;
+  for (let t = 0; t < 90; t++) {
+    const p = map.floorList[Math.floor(rnd() * map.floorList.length)];
+    const k = p.y * W + p.x;
+    if (used.has(k) || map.tiles[k] !== FLOOR) continue;
+    const d = dist[k];
+    if (d < minDist || d > maxDist) continue;
+    if (filter && !filter(p)) continue;
+    let md = 30;
+    for (const a of avoid) md = Math.min(md, Math.abs(a.x - p.x) + Math.abs(a.y - p.y));
+    const score = Math.min(md, spread * 4) + rnd() * spread;
+    if (score > bestScore) { bestScore = score; best = p; }
+  }
+  if (best) used.add(best.y * W + best.x);
+  return best;
+}
+
+// スタートから最も遠い壁面(出口用)
+export function farthestFace(map, used, filter) {
+  let best = null, bd = -1;
+  for (const f of wallFaces(map, filter)) {
+    const k = f.y * map.W + f.x;
+    const d = map.dist[k];
+    if (d > bd && !used.has(k)) { bd = d; best = f; }
+  }
+  if (best) used.add(best.y * map.W + best.x);
+  return best;
 }

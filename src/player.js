@@ -48,7 +48,7 @@ export class Player {
 
     this.crouching = input.crouch;
     const wantRun = input.run && !this.crouching && input.move.y > 0.1 && !this.exhausted;
-    const base = this.crouching ? 1.3 : wantRun ? 5.0 : 2.6;
+    const base = (this.crouching ? 1.3 : wantRun ? 5.0 : 2.6) * (this.speedMul ?? 1);
     const mx = input.move.x, my = input.move.y;
     const sin = Math.sin(this.yaw), cos = Math.cos(this.yaw);
     // 前方 = (-sin, -cos)
@@ -99,6 +99,7 @@ export class Player {
     if (lightHere < 0.18) dS -= this.flashlight ? 0.35 : 1.1;
     else if (lightHere > 0.45) dS += 0.25;
     dS -= g.fear * 3.2;
+    dS += g.logic?.sanityRate(this) || 0;
     this.sanity = Math.max(0, Math.min(100, this.sanity + dS * dt));
     if (this.sanity <= 0) g.kill('sanity');
 

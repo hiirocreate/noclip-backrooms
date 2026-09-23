@@ -167,3 +167,49 @@ h1 {
   .panel { padding: 14px 18px; }
   .panel label { margin: 7px 0; }
 }
+
+/* ---------- v1.1 追加 ---------- */
+#status { font-size: 12px; margin-top: 3px; color: #cfe8c8; opacity: .85; min-height: 1em; }
+#interact-hint {
+  position: absolute; left: 50%; top: 58%; transform: translateX(-50%);
+  font-size: 14px; padding: 5px 12px; background: rgba(0,0,0,.55); border: 1px solid rgba(233,220,138,.4);
+  color: #e9dc8a; opacity: 0; transition: opacity .2s; white-space: nowrap;
+}
+#interact-hint.show { opacity: 1; }
+.tbtn.use { grid-column: span 2; width: 100%; height: 48px; border-radius: 24px; background: rgba(233,220,138,.18); border-color: #e9dc8a; color: #f3eab0; font-size: 15px; }
+.version { font-size: 11px; opacity: .35; margin-top: 6px; }
+.credit { font-size: 11px !important; opacity: .55; line-height: 1.6 !important; }
+#update-banner {
+  position: fixed; left: 50%; bottom: max(14px, env(safe-area-inset-bottom)); transform: translateX(-50%);
+  width: min(560px, calc(100% - 32px)); background: rgba(12,14,8,.95); border: 1px solid #7fcf8a;
+  padding: 12px 14px; font-size: 13px; z-index: 25;
+}
+.update-head { color: #9fe8a8; margin-bottom: 6px; }
+#update-notes { max-height: 90px; overflow-y: auto; white-space: pre-wrap; opacity: .8; font-size: 12px; touch-action: pan-y; }
+.update-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.update-actions button { flex: 1; padding: 9px; background: rgba(127,207,138,.12); color: #c8f0cc; border: 1px solid rgba(127,207,138,.5); font-family: inherit; }
+#intro-en { font-family: "Courier New", monospace; font-size: 13px; letter-spacing: .3em; opacity: .5; margin-top: 4px; }
+.soon-head { opacity: .7; }
+.soon-level { font-family: "Courier New", monospace; font-size: 34px; color: #e9dc8a; letter-spacing: .2em; margin-top: 8px; }
+.soon-name { font-size: 16px; letter-spacing: .15em; margin-bottom: 8px; }
+.soon-note { font-size: 12px !important; opacity: .7; }
+#soon-list { list-style: none; padding: 0; font-size: 12px; opacity: .5; }
+.keypad { background: #1c1e22; border: 2px solid #444; padding: 16px; width: 250px; text-align: center; box-shadow: 0 0 40px #000; }
+.keypad-label { font-size: 12px; letter-spacing: .15em; opacity: .7; margin-bottom: 8px; }
+#keypad-display { font-family: "Courier New", monospace; font-size: 32px; letter-spacing: .35em; background: #0a2a14; color: #6aff9a; padding: 6px 0; margin-bottom: 12px; }
+#keypad-keys { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+#keypad-keys button { height: 46px; font-size: 20px; background: #3a3c40; color: #eee; border: 1px solid #555; font-family: inherit; }
+#keypad-keys button:active { background: #5a5c60; }
+#btn-keypad-close { margin-top: 12px; width: 100%; padding: 8px; background: transparent; color: #aaa; border: 1px solid #555; font-family: inherit; }
+#news-text { white-space: pre-wrap; font-family: inherit; font-size: 13px; line-height: 1.7; max-height: 50vh; overflow-y: auto; }
+@media (max-height: 460px) {
+  #keypad-keys button { height: 34px; font-size: 16px; }
+  #keypad-display { font-size: 24px; margin-bottom: 8px; }
+  .keypad { padding: 10px; }
+}
+@media (max-height: 460px) {
+  #update-banner { padding: 8px 10px; }
+  #update-notes { display: none; }
+  .update-actions { margin-top: 6px; }
+  .update-actions button { padding: 6px; }
+}

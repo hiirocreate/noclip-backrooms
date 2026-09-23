@@ -1,46 +1,62 @@
 # NOCLIP ― 裏側の階層 ―
 
-バックルーム系の一人称3Dホラーゲームです（Three.js + Capacitor で Android APK 化）。
-画像・音声ファイルは使っておらず、テクスチャはCanvas、効果音はWebAudioで生成しています。
+バックルーム系の一人称3Dホラーゲームです（Three.js + Capacitor で Android APK 化 / GitHub Pages で Web 公開）。
+画像・音声ファイルは使っておらず、質感は Canvas、効果音・環境音・BGM は WebAudio でその場で合成しています。
 
-## ステージ構成
+舞台設定は The Backrooms Wiki（backrooms-wiki.wikidot.com）で共同創作されている設定（CC BY-SA 3.0）を参考にした二次創作です。
 
-| 階層 | 舞台 | 集めるもの | 出口 | 「何か」 |
-|---|---|---|---|---|
-| LEVEL 0 ロビー | 黄色い壁紙と湿ったカーペット | 鍵 ×3 | 非常口 | 徘徊者（目で探す・音にも反応） |
-| LEVEL 1 居住区画 | コンクリートの駐車場風 | ヒューズ ×4 | エレベーター | 徘徊者 ＋ 笑顔（光を当てると突進） |
-| LEVEL 2 配管の迷宮 | 錆びた配管の狭い通路 | バルブハンドル ×5 | 圧力扉 | 猟犬（盲目・足音に反応）＋ 徘徊者 |
+## 階層（v1.1.0 時点）
 
-- マップは毎回ランダム生成（やり直し時は同じマップ）
-- 正気度・スタミナ・懐中電灯の電池、アーモンド水で正気度回復
-- 停電イベント、遠くの物音、正気度低下時の幻覚
-- 進行状況は5秒ごと・一時停止時・アイテム取得時に自動セーブ（「つづきから」で復元）
+| 階層 | コンセプト | 出口 | 「何か」 |
+|---|---|---|---|
+| LEVEL 0 ロビー | 孤独と方向感覚の喪失。見ていない間に壁が組み変わる。いるだけで正気が削れる | 歪んで聞こえる「ちらつく壁」をすり抜ける（ノークリップ） | なし（遠くに人影が見えることがある） |
+| LEVEL 1 居住区画 | 補給箱と停電。停電中は緑の非常灯（避難所）へ逃げ込み、ライトを消してやり過ごす | M.E.G. の無線（信号の強さ）を頼りに「保守通路」の扉へ。近づくほど配管が増える | 停電中だけ現れる「笑顔」（光に寄ってくる） |
+| LEVEL 2 配管の夢 | 扉と印。開かない扉は音を立て、開いた扉の先は「虚無の部屋」。直列配線の照明が区画ごと落ちる | 先人のチョークの矢印と、壁の刻印「Ⅲ」がある扉 | 猟犬（盲目・音で群れで狩る）、暗くなった区画の「笑顔」 |
+| LEVEL 3 変電所 | 機械の唸りが足音を隠す。黒い液体（神経毒）。ブレーカーを上げてエレベーターへ引き返す往復脱出 | 電源を入れたエレベーター | 猟犬・徘徊者（電源投入で増えて一斉に動く） |
+| LEVEL 4 放棄されたオフィス | 比較的安全な謎解き。掲示物から暗証番号を割り出す。窓の外を見てはいけない | 非常階段（テンキー） | 壁をすり抜ける灰色の人影（ダラー） |
+
+LEVEL 5（恐怖のホテル）以降は、今後のアップデートで順次追加します。
+最新の階層をクリアしたセーブは「次の階層」を指したまま保存されるので、アップデート後に「つづきから」でそのまま進めます。
 
 ## 操作
 
-- **スマホ**：左側ドラッグ＝移動（大きく倒すとダッシュ）、右側ドラッグ＝視点、右上＝一時停止、ボタン＝走る／ライト／飲む／しゃがむ
-- **PC**：WASD移動、マウス視点（クリックで操作開始）、Shift走る、C しゃがむ、F ライト、Q 飲む、Esc 一時停止
+- **スマホ**：左側ドラッグ＝移動（大きく倒すとダッシュ）、右側ドラッグ＝視点、右上＝一時停止、ボタン＝走る／ライト／飲む／しゃがむ／調べる
+- **PC**：WASD移動、マウス視点（クリックで操作開始）、Shift走る、C しゃがむ、F ライト、Q 飲む、E 調べる、Esc 一時停止
 
-## APKの作り方（GitHub Actions）
+## 最初に1回だけ：署名キーの登録（上書き更新に必要）
 
-1. このフォルダ一式を GitHub リポジトリの `main` ブランチに置く
-   （`node_modules/` `dist/` `android/` は不要。`.gitignore` 済み）
-2. push すると `.github/workflows/build-apk.yml` が自動で動く
-   （Actions タブ →「Build APK」→「Run workflow」で手動実行も可）
-3. 完了後、実行結果ページ下部の **Artifacts → NOCLIP-apk** をダウンロード
-4. zip内の `app-debug.apk` をスマホに入れてインストール
-   （「提供元不明のアプリ」の許可が必要です）
+1. GitHub のリポジトリ → **Settings → Secrets and variables → Actions → New repository secret**
+2. 別途お渡しした `GitHub_Secrets_登録用.txt` の4つ（`KEYSTORE_BASE64` / `KEYSTORE_PASSWORD` / `KEY_ALIAS` / `KEY_PASSWORD`）を登録
+3. 署名キー（`noclip-release.keystore`）と登録用テキストは **リポジトリに上げず**、手元で保管してください（なくすと上書き更新できなくなります）
 
-※ `android/` フォルダはワークフロー内で毎回生成します。全画面化・横画面固定・アイコンは `android-overrides/` の内容で上書きしています。
+※ v1.0（デバッグ署名）から v1.1 へ更新するときだけ、署名が変わるため旧アプリのアンインストールが必要です。以後は上書きインストールできます。
 
-## Web版の公開（GitHub Pages）
+## APK のビルドと配布（GitHub Actions）
 
-1. このフォルダ一式を GitHub リポジトリの `main` ブランチへ push します。
-2. GitHub の **Settings → Pages → Build and deployment** で、Source を **GitHub Actions** に設定します。
-3. push 後に Actions の **Deploy Web Game to GitHub Pages** が完了すると、
-   `https://<GitHubユーザー名>.github.io/<リポジトリ名>/` でプレイできます。
+1. このフォルダ一式を `main` ブランチへアップロード（`node_modules/` `dist/` `android/` は不要）
+2. Actions の **Build Android APK** が自動で動き、署名済み APK を作成
+3. `package.json` の `version` が新しい場合は、GitHub の **Releases** に `v1.1.0` のようなリリースが自動で作られ、APK が添付されます
+4. アプリはタイトル画面で Releases の最新版を確認し、新しい版があれば「更新のお知らせ」を表示します
 
-再公開は `main` への push ごとに自動で行われます。Actions タブから手動実行することも可能です。
+APK は Actions の実行結果（Artifacts → NOCLIP-apk）からもダウンロードできます。
+
+## アップデートの出し方
+
+1. `package.json` の `"version"` を上げる（例：`1.1.0` → `1.2.0`）
+2. `release-notes/1.2.0.md` に更新内容を書く（Release の本文と、アプリの「更新内容」画面に使われます）
+3. 変更したファイルをアップロード → 自動で Release 作成 → アプリに「更新のお知らせ」
+
+## 階層の追加のしかた
+
+1. `src/levels/level5.js` を作る（`src/levels/base.js` の `LevelLogic` を継承。`level0.js`〜`level4.js` が見本）
+   - `plan(map)`：出口・仕掛けの配置 / `build(world)`：扉や貼り紙 / `update(dt)`：ギミック
+   - `ambient(api)` / `music(api)`：その階層の環境音と BGM
+2. `src/levels/index.js` の `LEVELS` に追加し、`UPCOMING` から外す
+
+## Web版（GitHub Pages）
+
+`main` へのアップロードごとに **Deploy Web Game to GitHub Pages** が動き、
+`https://hiirocreate.github.io/noclip-backrooms/` が最新版になります。
 
 ## PCで動作確認する場合
 
@@ -53,25 +69,25 @@ npm run build      # dist/ に出力
 ## ファイル構成
 
 ```
-index.html                  画面(HUD・メニュー・タッチ操作)
-src/main.js                 ゲーム進行・ループ・イベント
-src/levels.js               各階層の設定・メモの文章・エンディング
-src/mapgen.js               迷路生成
-src/world.js                3D構築・焼き込みライティング・当たり判定
-src/entities.js             徘徊者／笑顔／猟犬のAI
-src/player.js               一人称移動・懐中電灯・正気度
-src/items.js                アイテム
-src/audio.js                効果音・環境音の合成
-src/postfx.js               ノイズ・色収差などの画面効果
-src/input.js                キーボード・マウス・タッチ
-src/textures.js             壁紙などの質感生成
-android-overrides/          Android用の上書きファイル(全画面・アイコン)
-.github/workflows/build-apk.yml  APKビルド
+index.html                       画面(HUD・メニュー・テンキー・予告画面など)
+src/main.js                      ゲーム進行・セーブ・調べる操作・更新のお知らせ
+src/levels/index.js              階層の一覧(ここに追加すると次の階層になる)
+src/levels/base.js               階層ロジックの土台
+src/levels/level0.js〜level4.js  各階層の仕掛け・メモ・環境音・BGM
+src/mapgen.js                    迷路生成と配置ヘルパー
+src/world.js                     3D構築・照明回路つき焼き込みライティング・扉・貼り紙
+src/entities.js                  徘徊者／笑顔／猟犬／ダラーのAI
+src/player.js                    一人称移動・懐中電灯・正気度
+src/items.js                     拾えるもの
+src/audio.js                     効果音・環境音・BGM・残響の合成
+src/postfx.js                    ノイズ・色収差などの画面効果
+src/input.js                     キーボード・マウス・タッチ
+src/textures.js                  壁紙・扉・掲示物などの質感生成
+src/config.js / src/update.js    バージョンと更新チェック
+release-notes/                   バージョンごとの更新内容
+scripts/patch_android.py         Android 設定の上書き(全画面・横画面・アイコン・バージョン・署名)
+scripts/make_icons.py            アイコン生成
+android-overrides/               Android 用の上書きファイル
+.github/workflows/build-apk.yml  APK ビルドと Release 作成
+.github/workflows/deploy-pages.yml  Web版の公開
 ```
-
-## 調整のヒント
-
-- 難易度：`src/entities.js` の `chaseSpeed`（追跡速度）、`src/levels.js` の `entities` / `escalate`
-- 明るさ：`src/levels.js` の `lamp.density` / `lamp.intensity` / `fog.density`
-- 音量：ゲーム内の設定画面で、環境音（蛍光灯のハム音など）とBGMを別々に調整
-- 階層の追加：`LEVELS` 配列に要素を追加（`theme` は lobby / parking / pipes）

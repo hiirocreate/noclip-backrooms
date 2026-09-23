@@ -46,33 +46,41 @@ function noteMesh() {
   return g;
 }
 
+const MESHES = { battery: batteryMesh, water: waterMesh, note: noteMesh, key: () => keyMesh('key'), fuse: () => keyMesh('fuse'), valve: () => keyMesh('valve') };
+const HALO = { battery: 0x80ff90, water: 0xfff0c0, note: 0xffffff, key: 0xffd26a, fuse: 0x7ac8ff, valve: 0xff5a3a };
+
+/**
+ * specs: [{ id, type, x, y (タイル), note?, y0? }] をレベル側が用意する
+ */
 export class Items {
-  constructor(game) {
+  constructor(game, specs) {
     this.game = game;
     this.list = [];
-    const w = game.world, map = w.map, halo = w.common.halo;
-    let itemIndex = 0;
-    const add = (p, type, mesh, color, extra = {}) => {
-      const id = `${type}-${itemIndex++}`;
-      // 自動セーブから再開した場合、既に拾った消耗品や鍵は復活させない。
-      if (game.collected?.has(id)) return;
-      const c = w.tileCenter(p.x, p.y);
-      c.x += (Math.random() - 0.5) * w.T * 0.4; c.z += (Math.random() - 0.5) * w.T * 0.4;
-      const g = new THREE.Group();
-      g.add(mesh);
-      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: halo, color, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.55 }));
-      s.scale.setScalar(type === 'key' ? 0.9 : 0.5);
-      g.add(s);
-      g.position.set(c.x, type === 'note' ? 0.01 : 0.55, c.z);
-      if (type === 'note') { s.position.y = 0.05; s.material.opacity = 0.25; }
-      game.scene.add(g);
-      this.list.push({ id, type, g, mesh, pos: c, alive: true, phase: Math.random() * 6, ...extra });
-    };
-    const keyColor = { key: 0xffd26a, fuse: 0x7ac8ff, valve: 0xff5a3a }[game.cfg.key.kind];
-    for (const p of map.keys) add(p, 'key', keyMesh(game.cfg.key.kind), keyColor);
-    for (const p of map.pickups) add(p, p.kind, p.kind === 'battery' ? batteryMesh() : waterMesh(), p.kind === 'battery' ? 0x80ff90 : 0xfff0c0);
-    for (const p of map.notes) add(p, 'note', noteMesh(), 0xffffff, { note: p.note });
+    for (const sp of specs) this.add(sp);
   }
+
+  add(sp) {
+    const game = this.game, w = game.world;
+    if (game.collected?.has(sp.id)) return null;
+    const c = w.tileCenter(sp.x, sp.y);
+    if (!sp.exact) { c.x += (Math.random() - 0.5) * w.T * 0.4; c.z += (Math.random() - 0.5) * w.T * 0.4; }
+    if (sp.wx !== undefined) { c.x = sp.wx; c.z = sp.wz; }
+    const g = new THREE.Group();
+    const mesh = (MESHES[sp.type] || MESHES.water)();
+    g.add(mesh);
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: w.common.halo, color: HALO[sp.type] || 0xffffff, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.55 }));
+    s.scale.setScalar(0.5);
+    g.add(s);
+    const baseY = sp.type === 'note' ? 0.01 : (sp.y0 ?? 0.55);
+    g.position.set(c.x, baseY, c.z);
+    if (sp.type === 'note') { s.position.y = 0.05; s.material.opacity = 0.25; }
+    game.scene.add(g);
+    const it = { ...sp, g, mesh, pos: c, baseY, alive: true, phase: Math.random() * 6 };
+    this.list.push(it);
+    return it;
+  }
+
+  remove(it) { it.alive = false; this.game.scene.remove(it.g); }
 
   update(dt, t) {
     const p = this.game.player.pos;
@@ -80,16 +88,16 @@ export class Items {
       if (!it.alive) continue;
       if (it.type !== 'note') {
         it.mesh.rotation.y += dt * 1.2;
-        it.g.position.y = 0.55 + Math.sin(t * 2 + it.phase) * 0.06;
+        it.g.position.y = it.baseY + Math.sin(t * 2 + it.phase) * 0.06;
       }
       const d = Math.hypot(p.x - it.pos.x, p.z - it.pos.z);
       if (d < 1.0) this.collect(it);
     }
+    this.list = this.list.filter(it => it.alive);
   }
 
   collect(it) {
-    it.alive = false;
-    this.game.scene.remove(it.g);
+    this.remove(it);
     this.game.onPickup(it);
   }
 

@@ -4,3 +4,6 @@ dist-single/
 android/
 *.apk
 android-overrides/res/mipmap-*/
+*.keystore
+*.jks
+signing/

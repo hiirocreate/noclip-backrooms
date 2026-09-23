@@ -93,7 +93,7 @@ export class Wanderer extends Entity {
   constructor(game, pos) {
     super(game, 'wanderer', pos);
     const lv = game.cfg;
-    this.walkSpeed = 1.3; this.chaseSpeed = lv.id === 0 ? 3.5 : lv.id === 1 ? 3.8 : 4.0;
+    this.walkSpeed = 1.3; this.chaseSpeed = lv.chaseSpeed || 3.8;
     const h = Math.min(lv.height - 0.15, 2.7);
     const s = h / 2.7;
     const mat = new THREE.MeshBasicMaterial({ color: 0x050403 });
@@ -206,8 +206,10 @@ export class Wanderer extends Entity {
 
 /* ============ 笑顔 : 暗がりに浮かぶ顔 ============ */
 export class Smiler extends Entity {
-  constructor(game, pos) {
+  // hunter: 停電中だけ現れ、光に引き寄せられる(Level 1)
+  constructor(game, pos, { hunter = false } = {}) {
     super(game, 'smiler', pos);
+    this.hunter = hunter;
     const mat = new THREE.SpriteMaterial({ map: game.world.common.smiler, color: 0xffffff, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, transparent: true, opacity: 0.9 });
     this.mesh = new THREE.Sprite(mat);
     this.mesh.scale.set(1.1, 1.1, 1);
@@ -222,6 +224,7 @@ export class Smiler extends Entity {
   }
 
   relocate() {
+    if (this.hunter) { this.gone = true; return; }
     const list = this.world.map.floorList.filter(p => this.world.map.dark[p.y * this.world.map.W + p.x]);
     const pp = this.game.player.pos;
     for (let i = 0; i < 30 && list.length; i++) {
@@ -235,7 +238,8 @@ export class Smiler extends Entity {
     this.stateTime += dt;
     const g = this.game, p = g.player;
     const d = this.distToPlayer();
-    const dark = this.isDark(this.pos.x, this.pos.z) || g.world.blackout > 0.5;
+    const dark = this.isDark(this.pos.x, this.pos.z) || g.world.power < 0.5;
+    const safe = (x, z) => g.logic?.isSafe?.(x, z);
     // 懐中電灯に照らされているか
     let inBeam = false;
     if (p.flashlight && d < 16) {
@@ -243,7 +247,18 @@ export class Smiler extends Entity {
       const dir = p.cam.getWorldDirection(new THREE.Vector3());
       if (tmp.dot(dir) > 0.93 && g.world.los(p.pos.x, p.pos.z, this.pos.x, this.pos.z)) inBeam = true;
     }
-    if (this.state === 'idle') {
+    if (this.state === 'idle' && this.hunter) {
+      this.lit = inBeam ? this.lit + dt : Math.max(0, this.lit - dt * 0.5);
+      // 光に引き寄せられる。避難所(緑の非常灯)の中には入れない
+      const playerSafe = safe(p.pos.x, p.pos.z);
+      let speed = playerSafe ? 0 : p.flashlight && d < 30 ? 2.4 : d < 14 ? 0.7 : 0.3;
+      if (speed) {
+        const ox = this.pos.x, oz = this.pos.z;
+        this.followField(g.playerField, p.pos, speed, dt);
+        if (safe(this.pos.x, this.pos.z)) { this.pos.x = ox; this.pos.z = oz; }
+      }
+      if (!playerSafe && (this.lit > 0.4 || d < 2.0)) { this.setState('charge'); g.onChaseStart(this); }
+    } else if (this.state === 'idle') {
       this.lit = inBeam ? this.lit + dt : Math.max(0, this.lit - dt * 0.5);
       // ゆっくり漂う
       this.drift.set(Math.sin(t * 0.3 + this.home.x), 0, Math.cos(t * 0.23 + this.home.z)).multiplyScalar(0.6);
@@ -257,7 +272,9 @@ export class Smiler extends Entity {
       if (this.lit > 0.45 || d < 2.2) { this.setState('charge'); g.onChaseStart(this); }
     } else if (this.state === 'charge') {
       const speed = this.stateTime < 0.35 ? 0 : 7.2;
+      const ox = this.pos.x, oz = this.pos.z;
       if (speed) this.followField(g.playerField, p.pos, speed, dt);
+      if (safe(this.pos.x, this.pos.z)) { this.pos.x = ox; this.pos.z = oz; this.setState('fade'); g.onChaseEnd(this); }
       if (d < 0.9) g.kill('smiler');
       if (this.stateTime > 4.5) { this.setState('fade'); g.onChaseEnd(this); }
     } else if (this.state === 'fade') {
@@ -313,11 +330,17 @@ export class Hound extends Entity {
     this.randomTarget();
   }
 
-  hear(pos, radius) {
+  hear(pos, radius, relay = false) {
     const d = Math.hypot(pos.x - this.pos.x, pos.z - this.pos.z);
-    if (d < radius * 1.5) {
-      if (this.state !== 'hunt') { this.game.onChaseStart(this); }
+    if (relay || d < radius * 1.5) {
+      const wasHunting = this.state === 'hunt';
+      if (!wasHunting) { this.game.onChaseStart(this); }
       this.setState('hunt'); this.setTarget(pos.x, pos.z);
+      // 遠吠えで仲間に知らせる(群れで狩る)
+      if (!relay && !wasHunting) {
+        this.game.audio.howl?.(this.pos);
+        for (const e of this.game.entities) if (e !== this && e.type === 'hound' && e.distToPlayer() < 45) e.hear(pos, radius, true);
+      }
     }
   }
 
@@ -355,13 +378,45 @@ export class Hound extends Entity {
   }
 }
 
+/* ============ ダラー : 壁をすり抜ける灰色の人影 ============ */
+export class Duller extends Wanderer {
+  constructor(game, pos) {
+    super(game, pos);
+    this.type = 'duller';
+    this.voice?.stop(); this.voice = game.audio.entityVoice('duller');
+    this.walkSpeed = 0.8; this.chaseSpeed = 1.9;
+    const mat = new THREE.MeshBasicMaterial({ color: 0x9a9a94, transparent: true, opacity: 0.55, depthWrite: false });
+    this.mesh.traverse(o => { if (o.isMesh) o.material = mat; });
+    this.eyes.visible = false;
+  }
+  randomTarget() {
+    const T = this.world.T, W = this.world.map.W, H = this.world.map.H;
+    this.target = new THREE.Vector3((1 + Math.random() * (W - 2)) * T, 0, (1 + Math.random() * (H - 2)) * T);
+  }
+  // 壁を無視してまっすぐ進む
+  followField(field, goal, speed, dt) {
+    const dx = goal.x - this.pos.x, dz = goal.z - this.pos.z, d = Math.hypot(dx, dz);
+    if (d < 0.2) return true;
+    this.heading = Math.atan2(dx, dz);
+    const st = Math.min(d, speed * dt);
+    this.pos.x += dx / d * st; this.pos.z += dz / d * st;
+    return false;
+  }
+  canSee() {
+    const p = this.game.player; const d = this.distToPlayer();
+    if (d > (p.flashlight ? 14 : 9) * (p.crouching ? 0.6 : 1)) return false;
+    return this.world.los(this.pos.x, this.pos.z, p.pos.x, p.pos.z);
+  }
+  setTarget(x, z) { this.target = new THREE.Vector3(x, 0, z); }
+}
+
 export function spawnEntity(game, type, avoidDist = 14) {
   const w = game.world;
   const field = game.playerField;
   const cand = w.map.floorList.filter(p => {
     const v = field[p.y * w.map.W + p.x];
     if (v < 0 || v * w.T < avoidDist * 1.0) return false;
-    if (type === 'smiler' && !w.map.dark[p.y * w.map.W + p.x]) return false;
+    if (type === 'smiler' && w.map.dark.some?.(Boolean) && !w.map.dark[p.y * w.map.W + p.x]) return false;
     return true;
   });
   const list = cand.length ? cand : w.map.floorList;
@@ -369,6 +424,7 @@ export function spawnEntity(game, type, avoidDist = 14) {
   const pos = w.tileCenter(p.x, p.y);
   if (type === 'wanderer') return new Wanderer(game, pos);
   if (type === 'smiler') return new Smiler(game, pos);
+  if (type === 'duller') return new Duller(game, pos);
   return new Hound(game, pos);
 }
 

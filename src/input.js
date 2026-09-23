@@ -23,6 +23,7 @@ export class Input {
       if (!this.enabled) return;
       if (e.code === 'KeyF') this.actions.add('light');
       if (e.code === 'KeyQ') this.actions.add('drink');
+      if (e.code === 'KeyE') this.actions.add('use');
       if (e.code === 'KeyC' || e.code === 'ControlLeft') this.crouch = !this.crouch;
       if (e.code === 'Escape' || e.code === 'KeyP') this.actions.add('pause');
     });
@@ -120,6 +121,7 @@ export class Input {
     const tap = (id, fn) => document.getElementById(id).addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); fn(); });
     tap('btn-light', () => this.actions.add('light'));
     tap('btn-drink', () => this.actions.add('drink'));
+    tap('btn-use', () => this.actions.add('use'));
     tap('btn-crouch', () => { this.crouch = !this.crouch; document.getElementById('btn-crouch').classList.toggle('on', this.crouch); });
   }
 

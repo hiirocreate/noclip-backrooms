@@ -15,6 +15,7 @@
     <div id="hud-top">
       <div id="level-name"></div>
       <div id="objective"></div>
+      <div id="status"></div>
     </div>
     <div id="bars">
       <div class="bar"><span>正気</span><div class="track"><div id="bar-sanity" class="fill sanity"></div></div></div>
@@ -23,6 +24,7 @@
     </div>
     <div id="inventory"><span id="water-count">0</span> アーモンド水 <small>(Q / 飲む)</small></div>
     <div id="message"></div>
+    <div id="interact-hint"></div>
     <div id="crosshair"></div>
     <button id="btn-pause" class="icon-btn" aria-label="一時停止">II</button>
   </div>
@@ -36,6 +38,7 @@
       <button id="btn-light" class="tbtn">ライト</button>
       <button id="btn-drink" class="tbtn small">飲む</button>
       <button id="btn-crouch" class="tbtn small">しゃがむ</button>
+      <button id="btn-use" class="tbtn use hidden">調べる</button>
     </div>
   </div>
 
@@ -51,6 +54,15 @@
         <button id="btn-howto">あそびかた</button>
       </div>
       <p class="warn">ヘッドホン推奨 / 大きな音や点滅表現があります</p>
+      <p id="version" class="version"></p>
+    </div>
+    <div id="update-banner" class="hidden">
+      <div class="update-head">新しいバージョン <b id="update-version"></b> が公開されています</div>
+      <div id="update-notes"></div>
+      <div class="update-actions">
+        <button id="btn-update-open">ダウンロードページを開く</button>
+        <button id="btn-update-later">あとで</button>
+      </div>
     </div>
   </div>
 
@@ -74,15 +86,15 @@
   <div id="screen-howto" class="screen hidden">
     <div class="panel">
       <h2>あそびかた</h2>
-      <p>あなたは現実から「noclip」し、終わりのない黄色い部屋へ落ちた。<br />各階層で<b>鍵となるアイテム</b>をすべて集め、<b>出口</b>から次の階層へ進もう。</p>
+      <p>あなたは現実から「noclip」し、終わりのない黄色い部屋へ落ちた。<br />階層ごとに、生き延び方も出口の見つけ方も違う。<b>落ちているメモ</b>が手がかりになる。</p>
       <ul>
-        <li><b>スマホ</b>：左側ドラッグで移動、右側ドラッグで視点。「走る」は押している間ダッシュ。</li>
-        <li><b>PC</b>：WASD移動 / マウス視点 / Shift走る / C しゃがむ / F ライト / Q 飲む / Esc 一時停止</li>
+        <li><b>スマホ</b>：左側ドラッグで移動、右側ドラッグで視点。「走る」は押している間ダッシュ。近くに調べられる物があると「調べる」ボタンが出る。</li>
+        <li><b>PC</b>：WASD移動 / マウス視点 / Shift走る / C しゃがむ / F ライト / Q 飲む / E 調べる / Esc 一時停止</li>
         <li>走ると<b>足音</b>で「何か」に気づかれる。しゃがむと静かに動ける。</li>
         <li>暗闇や「何か」の近くにいると<b>正気</b>が減る。アーモンド水で回復できる。</li>
         <li>ライトは電池を消費する。落ちている電池で補充できる。</li>
-        <li>Level 1 の暗がりに浮かぶ<b>笑顔</b>には光を当てるな。</li>
       </ul>
+      <p class="credit" id="credit"></p>
       <button class="back">もどる</button>
     </div>
   </div>
@@ -109,6 +121,7 @@
     <div class="intro">
       <div id="intro-level"></div>
       <div id="intro-name"></div>
+      <div id="intro-en"></div>
       <div id="intro-desc"></div>
     </div>
   </div>
@@ -124,11 +137,37 @@
     </div>
   </div>
 
-  <div id="screen-ending" class="screen hidden">
+  <div id="screen-soon" class="screen hidden">
     <div class="panel ending">
-      <h2>END</h2>
-      <div id="ending-text"></div>
-      <button id="btn-ending-quit">タイトルへ</button>
+      <p class="soon-head">あなたは、ここまで辿り着いた。</p>
+      <div id="soon-level" class="soon-level"></div>
+      <div id="soon-name" class="soon-name"></div>
+      <p id="soon-desc"></p>
+      <p class="soon-note">この先の階層は、次回のアップデートで解放されます。<br />セーブは保存されているので、アップデート後に「つづきから」で進めます。</p>
+      <ul id="soon-list"></ul>
+      <button id="btn-soon-quit">タイトルへ</button>
+    </div>
+  </div>
+
+  <div id="screen-keypad" class="screen hidden">
+    <div class="keypad">
+      <div class="keypad-label">非常階段 ― 暗証番号</div>
+      <div id="keypad-display">____</div>
+      <div id="keypad-keys">
+        <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
+        <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
+        <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+        <button data-k="C">C</button><button data-k="0">0</button><button data-k="OK">OK</button>
+      </div>
+      <button id="btn-keypad-close">離れる</button>
+    </div>
+  </div>
+
+  <div id="screen-news" class="screen hidden">
+    <div class="panel">
+      <h2 id="news-title">更新内容</h2>
+      <pre id="news-text"></pre>
+      <button id="btn-news-close">とじる</button>
     </div>
   </div>
 

@@ -7,12 +7,23 @@ export class Audio {
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
     const ctx = this.ctx = new AC();
-    this.master = ctx.createGain(); this.master.gain.value = this.volume;
+    // out(最終) ← master(効果音) + 残響 / ambientBus(環境音) / musicBus(BGM)
+    this.out = ctx.createGain(); this.out.gain.value = this.volume;
+    this.master = ctx.createGain();
     this.ambientBus = ctx.createGain(); this.ambientBus.gain.value = this.ambientVolume;
     this.musicBus = ctx.createGain(); this.musicBus.gain.value = this.musicVolume;
+    this.verb = ctx.createConvolver();
+    this.verbSend = ctx.createGain(); this.verbSend.gain.value = 0.3;
+    this.verbWet = ctx.createGain(); this.verbWet.gain.value = 1;
     const comp = ctx.createDynamicsCompressor();
     comp.threshold.value = -12; comp.ratio.value = 4;
-    this.master.connect(comp); this.ambientBus.connect(this.master); this.musicBus.connect(this.master); comp.connect(ctx.destination);
+    this.master.connect(this.out);
+    this.master.connect(this.verbSend); this.verbSend.connect(this.verb); this.verb.connect(this.verbWet); this.verbWet.connect(this.out);
+    this.ambientBus.connect(this.master);
+    this.musicBus.connect(this.out);
+    this.musicSend = ctx.createGain(); this.musicSend.gain.value = 0.25; this.musicBus.connect(this.musicSend); this.musicSend.connect(this.verb);
+    this.out.connect(comp); comp.connect(ctx.destination);
+    this.setSpace({ decay: 1.2, wet: 0.2 });
     // ホワイトノイズ
     const len = ctx.sampleRate * 2;
     this.noiseBuf = ctx.createBuffer(1, len, ctx.sampleRate);
@@ -25,7 +36,7 @@ export class Audio {
     this.ambient = [];
   }
 
-  setVolume(v) { this.volume = v; if (this.master) this.master.gain.value = v; }
+  setVolume(v) { this.volume = v; if (this.out) this.out.gain.value = v; }
   setAmbientVolume(v) { this.ambientVolume = v; if (this.ambientBus) this.ambientBus.gain.setTargetAtTime(v, this.t, 0.04); }
   setMusicVolume(v) { this.musicVolume = v; if (this.musicBus) this.musicBus.gain.setTargetAtTime(v, this.t, 0.04); }
   suspend() { this.ctx && this.ctx.suspend(); }
@@ -49,45 +60,81 @@ export class Audio {
   }
   chain(...nodes) { for (let i = 0; i < nodes.length - 1; i++) nodes[i].connect(nodes[i + 1]); return nodes[nodes.length - 1]; }
 
-  /* ---------- 環境音 ---------- */
+  /* ---------- 空間の残響 ---------- */
+  // decay: 残響の長さ(秒) / wet: 残響の量 / bright: 高域の残り具合(0〜1)
+  setSpace({ decay = 1.5, wet = 0.25, bright = 0.5 } = {}) {
+    if (!this.ctx) return;
+    const rate = this.ctx.sampleRate, len = Math.floor(rate * decay);
+    const buf = this.ctx.createBuffer(2, len, rate);
+    for (let ch = 0; ch < 2; ch++) {
+      const d = buf.getChannelData(ch); let lp = 0;
+      for (let i = 0; i < len; i++) {
+        const t = i / len;
+        const n = Math.random() * 2 - 1;
+        lp += (n - lp) * (0.08 + bright * 0.9 * (1 - t));
+        d[i] = lp * Math.pow(1 - t, 3) * (i < rate * 0.004 ? i / (rate * 0.004) : 1);
+      }
+    }
+    this.verb.buffer = buf;
+    this.verbSend.gain.setTargetAtTime(wet, this.t, 0.1);
+  }
+
+  /* ---------- 環境音・BGM(レベル側の builder で組み立てる) ---------- */
+  api(list, timers, out) {
+    const A = this;
+    return {
+      A, out,
+      keep: (...nodes) => { list.push(...nodes); return nodes[0]; },
+      start: (...nodes) => { for (const n of nodes) { n.start?.(); list.push(n); } return nodes[0]; },
+      every: (ms, fn, jitter = 0) => {
+        const loop = () => { const id = setTimeout(() => { if (A.ctx?.state === 'running') fn(); loop(); }, ms + Math.random() * jitter); timers.push(id); };
+        loop();
+      },
+      after: (ms, fn) => timers.push(setTimeout(fn, ms)),
+    };
+  }
+
   stopAmbient() {
     for (const n of this.ambient || []) { try { n.stop ? n.stop() : n.disconnect(); } catch (e) { /* noop */ } }
-    this.ambient = [];
+    for (const id of this.ambTimers || []) clearTimeout(id);
+    this.ambient = []; this.ambTimers = [];
     this.humGain = null;
   }
 
   stopMusic() {
     for (const n of this.music || []) { try { n.stop ? n.stop() : n.disconnect(); } catch (e) { /* noop */ } }
-    this.music = [];
+    for (const id of this.musTimers || []) clearTimeout(id);
+    this.music = []; this.musTimers = []; this.musicCtl = null;
   }
 
-  startAmbient(theme) {
+  startAmbient(builder) {
     if (!this.ctx) return;
     this.stopAmbient();
-    const A = this.ambient;
-    const out = this.gain(1); out.connect(this.ambientBus); A.push(out);
-    // 蛍光灯を使う階層だけ、照明の近さで変わるハム音を鳴らす。
-    this.humGain = this.gain(0);
-    const humF = this.filter('lowpass', 900, 2);
-    this.chain(humF, this.humGain, out);
-    if (theme === 'lobby' || theme === 'parking') {
-      for (const [f, type, v] of [[60, 'sawtooth', 0.05], [120, 'square', 0.02], [180.5, 'sawtooth', 0.015]]) {
-        const o = this.osc(type, f); const g = this.gain(v); o.connect(g); g.connect(humF); o.start(); A.push(o);
-      }
-      const buzz = this.noise(); const bf = this.filter('bandpass', 3200, 6); const bg = this.gain(0.012);
-      this.chain(buzz, bf, bg, this.humGain); buzz.start(); A.push(buzz);
-    }
+    const out = this.gain(1); out.connect(this.ambientBus); this.ambient.push(out);
+    this.humGain = this.gain(0); this.humMute = this.gain(1);
+    this.humGain.connect(this.humMute); this.humMute.connect(out); this.ambient.push(this.humGain, this.humMute);
+    builder?.(this.api(this.ambient, this.ambTimers, out));
+  }
 
-    // 低いうなり(ドローン)
-    const drone = this.noise(true);
-    const df = this.filter('lowpass', theme === 'pipes' ? 140 : 90, 1);
-    const dg = this.gain(theme === 'pipes' ? 0.5 : theme === 'parking' ? 0.3 : 0.18);
-    this.chain(drone, df, dg, out); drone.start(); A.push(drone);
-    const lfo = this.osc('sine', 0.07); const lg = this.gain(0.1); lfo.connect(lg); lg.connect(dg.gain); lfo.start(); A.push(lfo);
-    if (theme !== 'lobby') {
-      const o = this.osc('sine', theme === 'pipes' ? 43 : 37); const g = this.gain(0.06);
-      o.connect(g); g.connect(out); o.start(); A.push(o);
+  // builder は { intensity(v) } を返せる(緊張度で BGM が変わる)
+  startMusic(builder) {
+    if (!this.ctx) return;
+    this.stopMusic();
+    const out = this.gain(0); out.connect(this.musicBus); this.music.push(out);
+    out.gain.setTargetAtTime(1, this.t, 1.5); // フェードイン
+    this.musicCtl = builder?.(this.api(this.music, this.musTimers, out)) || null;
+  }
+  setIntensity(v) { this.musicCtl?.intensity?.(v); }
+
+  // 蛍光灯の唸り(照明の近さで音量が変わる)
+  fluoHum(api, base = 60, amt = 1) {
+    const humF = this.filter('lowpass', 900, 2);
+    humF.connect(this.humGain); api.keep(humF);
+    for (const [f, type, v] of [[base, 'sawtooth', 0.05], [base * 2, 'square', 0.02], [base * 3 + 0.5, 'sawtooth', 0.015]]) {
+      const o = this.osc(type, f); const g = this.gain(v * amt); o.connect(g); g.connect(humF); api.start(o);
     }
+    const buzz = this.noise(); const bf = this.filter('bandpass', 3200, 6); const bg = this.gain(0.012 * amt);
+    this.chain(buzz, bf, bg, this.humGain); api.start(buzz);
   }
 
   setHum(level) {
@@ -95,22 +142,64 @@ export class Audio {
     this.humGain.gain.setTargetAtTime(Math.min(1.4, level), this.t, 0.15);
   }
 
-  // 効果音・環境音とは別バスに送る、控えめな持続BGM。
-  startMusic(theme) {
-    if (!this.ctx) return;
-    this.stopMusic();
-    const M = this.music = [];
-    const out = this.gain(1); out.connect(this.musicBus); M.push(out);
-    const filter = this.filter('lowpass', theme === 'pipes' ? 420 : 620, 1.5); filter.connect(out);
-    const notes = theme === 'lobby' ? [55, 82.41, 110] : theme === 'parking' ? [49, 73.42, 98] : [46.25, 69.3, 92.5];
-    notes.forEach((freq, i) => {
-      const o = this.osc(i === 1 ? 'sine' : 'triangle', freq);
-      const g = this.gain(0.018 + i * 0.006);
-      const lfo = this.osc('sine', 0.035 + i * 0.012);
-      const lg = this.gain(0.012);
-      lfo.connect(lg); lg.connect(g.gain);
-      this.chain(o, g, filter); o.start(); lfo.start(); M.push(o, lfo);
-    });
+  // 音程(半音)→周波数
+  hz(midi) { return 440 * Math.pow(2, (midi - 69) / 12); }
+
+  // 柔らかい単音(BGM用)
+  note(out, midi, t, dur, { type = 'sine', vol = 0.05, attack = 0.02, cutoff = 2000, detune = 0, fm = 0, mod = null } = {}) {
+    const o = this.osc(type, this.hz(midi)); o.detune.value = detune; if (mod) mod.connect(o.detune);
+    const f = this.filter('lowpass', cutoff, 0.7); const g = this.gain();
+    this.chain(o, f, g, out);
+    if (fm) { const m = this.osc('sine', this.hz(midi) * 2); const mg = this.gain(this.hz(midi) * fm); m.connect(mg); mg.connect(o.frequency); m.start(t); m.stop(t + dur + 0.1); mg.gain.exponentialRampToValueAtTime(1, t + dur); }
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(vol, t + attack);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.start(t); o.stop(t + dur + 0.1);
+  }
+
+  // 位置のある持続音(機械の唸り、ちらつく壁、無線など)
+  loopAt(pos, build) {
+    if (!this.ctx) return null;
+    const p = this.panner(); p.refDistance = 2; p.rolloffFactor = 1.6;
+    p.positionX.value = pos.x; p.positionY.value = pos.y ?? 1.2; p.positionZ.value = pos.z;
+    const g = this.gain(0); p.connect(g); g.connect(this.ambientBus);
+    const nodes = []; build(p, nodes);
+    for (const n of nodes) n.start?.();
+    const ctl = {
+      set: (v) => g.gain.setTargetAtTime(v, this.t, 0.1),
+      move: (q) => { p.positionX.value = q.x; p.positionZ.value = q.z; },
+      stop: () => { nodes.forEach(n => { try { n.stop ? n.stop() : n.disconnect(); } catch (e) { /* noop */ } }); g.disconnect(); },
+    };
+    (this.ambient ||= []).push({ stop: ctl.stop });
+    return ctl;
+  }
+
+  // 無線の雑音(非位置)。strength 0〜1 で声(信号音)がはっきりする
+  radio() {
+    if (!this.ctx) return null;
+    const out = this.gain(0); out.connect(this.master);
+    const n = this.noise(); const bf = this.filter('bandpass', 1800, 0.8); const ng = this.gain(0.25);
+    this.chain(n, bf, ng, out); n.start();
+    const tone = this.osc('sine', 880); const tg = this.gain(0); this.chain(tone, tg, out); tone.start();
+    let str = 0, on = false;
+    const id = setInterval(() => {
+      if (!this.ctx || this.ctx.state !== 'running') return;
+      // モールス風の信号(近いほど明瞭)
+      const t = this.t;
+      const pat = [1, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, 0];
+      pat.forEach((b, i) => { tg.gain.setValueAtTime(b ? 0.05 * str : 0, t + i * 0.09); });
+      tg.gain.setValueAtTime(0, t + pat.length * 0.09);
+    }, 2200);
+    const ctl = {
+      set: (s, active = true) => {
+        str = s; on = active;
+        out.gain.setTargetAtTime(active ? 0.25 : 0, this.t, 0.2);
+        ng.gain.setTargetAtTime(0.35 * (1 - s * 0.7), this.t, 0.2);
+      },
+      stop: () => { clearInterval(id); try { n.stop(); tone.stop(); } catch (e) { /* noop */ } out.disconnect(); },
+    };
+    (this.ambient ||= []).push({ stop: ctl.stop });
+    return ctl;
   }
 
   /* ---------- 効果音 ---------- */
@@ -271,6 +360,78 @@ export class Audio {
     this.chain(n, nf, ng, this.master); this.env(ng, t, 0.005, 0.8, 0.4); this.oneShot(n, 0.5);
   }
 
+  howl(pos) {
+    this.at({ x: pos.x, y: 1, z: pos.z }, (out, t) => {
+      const o = this.osc('sawtooth', 220); const f = this.filter('bandpass', 700, 3); const g = this.gain();
+      this.chain(o, f, g, out);
+      o.frequency.setValueAtTime(180, t); o.frequency.linearRampToValueAtTime(420, t + 0.6); o.frequency.linearRampToValueAtTime(260, t + 1.6);
+      this.env(g, t, 0.15, 0.8, 1.6); this.oneShot(o, 1.9);
+    }, 2.5);
+  }
+
+  doorRattle(pos) {
+    this.at({ x: pos.x, y: 1.1, z: pos.z }, (out, t) => {
+      for (let i = 0; i < 5; i++) {
+        const n = this.noise(); const f = this.filter('bandpass', 900 + Math.random() * 600, 4); const g = this.gain();
+        this.chain(n, f, g, out); const tt = t + i * 0.09; this.env(g, tt, 0.002, 1.1, 0.07); n.start(tt); n.stop(tt + 0.1);
+        const o = this.osc('square', 140 + Math.random() * 40); const og = this.gain(); this.chain(o, og, out); this.env(og, tt, 0.002, 0.15, 0.1); o.start(tt); o.stop(tt + 0.12);
+      }
+    }, 1.2);
+  }
+
+  voidRoom() {
+    if (!this.ctx) return;
+    // 一瞬すべての音が消え、耳鳴りだけが残る
+    const t = this.t;
+    this.out.gain.cancelScheduledValues(t);
+    this.out.gain.setValueAtTime(this.volume, t); this.out.gain.linearRampToValueAtTime(0.02, t + 0.05);
+    this.out.gain.setValueAtTime(0.02, t + 1.6); this.out.gain.linearRampToValueAtTime(this.volume, t + 2.4);
+    const o = this.osc('sine', 7800); const g = this.gain(); o.connect(g); g.connect(this.ctx.destination);
+    this.env(g, t, 0.3, 0.02, 1.8); this.oneShot(o, 2.2);
+  }
+
+  breaker() {
+    if (!this.ctx) return;
+    const t = this.t;
+    const n = this.noise(); const f = this.filter('lowpass', 1200); const g = this.gain();
+    this.chain(n, f, g, this.master); this.env(g, t, 0.002, 1.2, 0.15); this.oneShot(n, 0.2);
+    const o = this.osc('sawtooth', 30); const of = this.filter('lowpass', 300); const og = this.gain();
+    this.chain(o, of, og, this.master);
+    o.frequency.setValueAtTime(30, t + 0.3); o.frequency.exponentialRampToValueAtTime(100, t + 2.5);
+    og.gain.setValueAtTime(0.0001, t + 0.3); og.gain.linearRampToValueAtTime(0.35, t + 2); og.gain.exponentialRampToValueAtTime(0.0001, t + 3.5);
+    o.start(t + 0.3); o.stop(t + 3.6);
+  }
+
+  alarm(sec = 6) {
+    if (!this.ctx) return;
+    const t = this.t;
+    const o = this.osc('square', 600); const f = this.filter('lowpass', 1800); const g = this.gain(0.07);
+    this.chain(o, f, g, this.master);
+    for (let i = 0; i < sec * 2; i++) { o.frequency.setValueAtTime(i % 2 ? 450 : 620, t + i * 0.5); }
+    g.gain.setValueAtTime(0.07, t + sec - 0.3); g.gain.linearRampToValueAtTime(0, t + sec);
+    o.start(t); o.stop(t + sec);
+  }
+
+  keyBeep(ok = null) {
+    if (!this.ctx) return;
+    const t = this.t;
+    if (ok === null) { const o = this.osc('square', 1400); const g = this.gain(); this.chain(o, g, this.master); this.env(g, t, 0.002, 0.05, 0.06); this.oneShot(o, 0.1); return; }
+    const seq = ok ? [880, 1320] : [220, 180];
+    seq.forEach((fr, i) => { const o = this.osc(ok ? 'sine' : 'square', fr); const g = this.gain(); this.chain(o, g, this.master); const tt = t + i * 0.15; this.env(g, tt, 0.005, ok ? 0.12 : 0.1, 0.25); o.start(tt); o.stop(tt + 0.3); });
+  }
+
+  noclip() {
+    if (!this.ctx) return;
+    const t = this.t;
+    const n = this.noise(); const f = this.filter('bandpass', 400, 1); const g = this.gain();
+    this.chain(n, f, g, this.master);
+    f.frequency.setValueAtTime(200, t); f.frequency.exponentialRampToValueAtTime(6000, t + 1);
+    this.env(g, t, 0.05, 0.6, 1.2); this.oneShot(n, 1.3);
+    const o = this.osc('sawtooth', 60); const og = this.gain(); this.chain(o, og, this.master);
+    o.frequency.setValueAtTime(60, t); o.frequency.exponentialRampToValueAtTime(900, t + 1);
+    this.env(og, t, 0.05, 0.15, 1); this.oneShot(o, 1.1);
+  }
+
   // 3D定位つき単発音
   at(pos, build, dur = 2) {
     if (!this.ctx) return;
@@ -308,6 +469,30 @@ export class Audio {
         const o = this.osc('triangle', 180); const o2 = this.osc('square', 263); const g = this.gain();
         o.connect(g); o2.connect(g); g.connect(out); this.env(g, t, 0.002, 0.5, 1.2);
         o.start(t); o2.start(t); o.stop(t + 1.3); o2.stop(t + 1.3);
+      } else if (kind === 'phone') {
+        for (let r = 0; r < 3; r++) for (let i = 0; i < 16; i++) {
+          const tt = t + r * 3 + i * 0.06; const o = this.osc('sine', i % 2 ? 1100 : 900); const g = this.gain(); this.chain(o, g, out);
+          g.gain.setValueAtTime(0.25, tt); g.gain.setValueAtTime(0, tt + 0.05); o.start(tt); o.stop(tt + 0.06);
+        }
+      } else if (kind === 'spark') {
+        for (let i = 0; i < 8; i++) {
+          const n = this.noise(); const f = this.filter('highpass', 2500); const g = this.gain(); this.chain(n, f, g, out);
+          const tt = t + Math.random() * 0.6; this.env(g, tt, 0.001, 0.9, 0.04); n.start(tt); n.stop(tt + 0.06);
+        }
+        const o = this.osc('sawtooth', 100); const og = this.gain(); this.chain(o, og, out); this.env(og, t, 0.01, 0.2, 0.5); this.oneShot(o, 0.6);
+      } else if (kind === 'relay') {
+        for (let i = 0; i < 2; i++) { const n = this.noise(); const f = this.filter('bandpass', 3000, 3); const g = this.gain(); this.chain(n, f, g, out); const tt = t + i * 0.12; this.env(g, tt, 0.001, 1, 0.02); n.start(tt); n.stop(tt + 0.04); }
+      } else if (kind === 'copier') {
+        const n = this.noise(); const f = this.filter('bandpass', 500, 2); const g = this.gain(); this.chain(n, f, g, out);
+        g.gain.setValueAtTime(0, t); for (let i = 0; i < 6; i++) { g.gain.linearRampToValueAtTime(0.5, t + i * 0.45 + 0.1); g.gain.linearRampToValueAtTime(0.1, t + i * 0.45 + 0.4); }
+        g.gain.linearRampToValueAtTime(0, t + 2.8); this.oneShot(n, 2.9);
+      } else if (kind === 'typing') {
+        for (let i = 0; i < 18; i++) { const n = this.noise(); const f = this.filter('bandpass', 2500 + Math.random() * 1500, 5); const g = this.gain(); this.chain(n, f, g, out); const tt = t + i * (0.08 + Math.random() * 0.1); this.env(g, tt, 0.001, 0.7, 0.03); n.start(tt); n.stop(tt + 0.05); }
+      } else if (kind === 'buzz') {
+        const n = this.noise(); const f = this.filter('bandpass', 120, 8); const g = this.gain(); this.chain(n, f, g, out); this.env(g, t, 0.1, 0.8, 1.5); this.oneShot(n, 1.7);
+      } else if (kind === 'pop') {
+        const n = this.noise(); const f = this.filter('highpass', 800); const g = this.gain(); this.chain(n, f, g, out); this.env(g, t, 0.001, 1.2, 0.08); this.oneShot(n, 0.12);
+        const o = this.osc('sine', 3000); const og = this.gain(); this.chain(o, og, out); this.env(og, t, 0.001, 0.1, 0.3); this.oneShot(o, 0.35);
       } else if (kind === 'drip') {
         const o = this.osc('sine', 1400); const g = this.gain(); this.chain(o, g, out);
         o.frequency.setValueAtTime(1800, t); o.frequency.exponentialRampToValueAtTime(700, t + 0.08);
@@ -332,6 +517,10 @@ export class Audio {
       const o = this.osc('sine', 1760); const o2 = this.osc('sine', 1766); const og = this.gain(0.07);
       o.connect(og); o2.connect(og); og.connect(p); o.start(); o2.start(); nodes.push(o, o2);
       const n = this.noise(); const f = this.filter('bandpass', 5000, 8); const ng = this.gain(0.1); this.chain(n, f, ng, p); n.start(); nodes.push(n);
+    } else if (type === 'duller') {
+      const n = this.noise(); const f = this.filter('bandpass', 350, 2); const ng = this.gain(0.5);
+      this.chain(n, f, ng, p); n.start(); nodes.push(n);
+      const lfo = this.osc('sine', 0.3); const lg = this.gain(0.4); lfo.connect(lg); lg.connect(ng.gain); lfo.start(); nodes.push(lfo);
     } else if (type === 'hound') {
       const n = this.noise(); const f = this.filter('bandpass', 700, 1.5); const ng = this.gain(0.8);
       this.chain(n, f, ng, p); n.start(); nodes.push(n);
