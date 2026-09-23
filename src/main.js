@@ -30,8 +30,10 @@ const DEATH = {
 class Game {
   constructor() {
     const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
-    this.settings = load(SET_KEY, { sens: 1, quality: isTouch ? 0.75 : 1, volume: 0.8, invert: false, shake: true });
+    this.settings = load(SET_KEY, { sens: 1, quality: isTouch ? 0.75 : 1, ambientVolume: 0.8, musicVolume: 0.3, invert: false, shake: true });
     this.save = load(SAVE_KEY, { level: 0, seeds: {} });
+    // 旧版の LEVEL 1 以降のセーブも「つづきから」として引き継ぐ。
+    if (!this.save.hasSave && this.save.level > 0) this.save.hasSave = true;
 
     this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -44,7 +46,8 @@ class Game {
     this.scene.add(this.camera);
     this.fx = new PostFX(this.renderer, this.scene, this.camera);
     this.audio = new Audio();
-    this.audio.setVolume(this.settings.volume);
+    this.audio.setAmbientVolume(this.settings.ambientVolume);
+    this.audio.setMusicVolume(this.settings.musicVolume);
     this.input = new Input(this.renderer.domElement, this.settings);
     this.player = new Player(this, this.camera);
     this.ambientLight = new THREE.AmbientLight(0xffffff, 0.12);
@@ -71,9 +74,8 @@ class Game {
 
   bindUI() {
     const click = (id, fn) => $(id).addEventListener('click', (e) => { e.stopPropagation(); this.audio.init(); fn(); });
-    $('btn-continue').disabled = !(this.save.level > 0);
-    $('btn-continue').textContent = this.save.level > 0 ? `つづきから (${LEVELS[this.save.level].code})` : 'つづきから';
-    click('btn-new', () => { this.save = { level: 0, seeds: {} }; store(SAVE_KEY, this.save); this.startLevel(0); });
+    this.updateContinueButton();
+    click('btn-new', () => { this.save = { level: 0, seeds: {}, hasSave: false }; store(SAVE_KEY, this.save); this.startLevel(0); });
     click('btn-continue', () => this.startLevel(this.save.level));
     click('btn-settings', () => { this.settingsBack = 'screen-title'; this.openSettings(); });
     click('btn-howto', () => this.show('screen-howto'));
@@ -97,19 +99,24 @@ class Game {
     });
 
     const s = this.settings;
-    const sens = $('set-sens'), q = $('set-quality'), vol = $('set-volume'), inv = $('set-invert'), sh = $('set-shake');
-    sens.value = s.sens; q.value = String(s.quality); vol.value = s.volume; inv.checked = s.invert; sh.checked = s.shake;
+    const sens = $('set-sens'), q = $('set-quality'), ambient = $('set-ambient-volume'), music = $('set-music-volume'), inv = $('set-invert'), sh = $('set-shake');
+    sens.value = s.sens; q.value = String(s.quality); ambient.value = s.ambientVolume; music.value = s.musicVolume; inv.checked = s.invert; sh.checked = s.shake;
     const apply = () => {
-      s.sens = +sens.value; s.quality = +q.value; s.volume = +vol.value; s.invert = inv.checked; s.shake = sh.checked;
-      this.audio.setVolume(s.volume); this.resize(); store(SET_KEY, s);
+      s.sens = +sens.value; s.quality = +q.value; s.ambientVolume = +ambient.value; s.musicVolume = +music.value; s.invert = inv.checked; s.shake = sh.checked;
+      this.audio.setAmbientVolume(s.ambientVolume); this.audio.setMusicVolume(s.musicVolume); this.resize(); store(SET_KEY, s);
       this.fx.u.grain.value = s.shake ? 1 : 0.3;
     };
-    [sens, q, vol, inv, sh].forEach(el => el.addEventListener('input', apply));
+    [sens, q, ambient, music, inv, sh].forEach(el => el.addEventListener('input', apply));
     [q, inv, sh].forEach(el => el.addEventListener('change', apply));
     this.fx.u.grain.value = s.shake ? 1 : 0.3;
   }
 
   openSettings() { this.show('screen-settings'); }
+
+  updateContinueButton() {
+    $('btn-continue').disabled = !this.save.hasSave;
+    $('btn-continue').textContent = this.save.hasSave ? `つづきから (${LEVELS[this.save.level].code})` : 'つづきから';
+  }
 
   resize() {
     const r = Math.min(devicePixelRatio || 1, 2) * this.settings.quality;
@@ -155,7 +162,10 @@ class Game {
     if (token !== this._loadToken) return;
 
     if (!this.save.seeds[i] || !retry) this.save.seeds[i] = (Math.random() * 1e9) | 0;
-    this.save.level = i; store(SAVE_KEY, this.save);
+    const resume = !retry && this.save.progress?.level === i ? this.save.progress : null;
+    this.save.level = i; this.save.hasSave = true;
+    if (!resume) this.save.progress = null;
+    store(SAVE_KEY, this.save);
     const t0 = performance.now();
     const map = generateMap(cfg, this.save.seeds[i]);
     this.world = new World(this.scene, cfg, map);
@@ -170,14 +180,22 @@ class Game {
       if (!this.world.solid(map.start.x + dx, map.start.y + dy)) { yaw = a; break; }
     }
     this.player.spawn(st.x, st.z, yaw);
+    if (resume) {
+      this.player.sanity = resume.sanity;
+      this.player.stamina = resume.stamina;
+      this.player.battery = resume.battery;
+      this.player.waters = resume.waters;
+    }
     this.camera.fov = 72;
     this.camera.rotation.z = 0;
     this.camera.updateProjectionMatrix();
     $('scare').classList.remove('sanity');
-    if (i === 0 && !retry) { this.player.battery = 100; this.player.waters = 1; }
+    if (i === 0 && !retry && !resume) { this.player.battery = 100; this.player.waters = 1; }
     this.player.flashlight = false; $('btn-light').classList.remove('on');
-    this.keysGot = 0;
+    this.keysGot = resume?.keysGot || 0;
+    this.collected = new Set(resume?.collected || []);
     this.items = new Items(this);
+    if (this.keysGot >= cfg.key.count) this.world.unlockDoor();
     this.updatePlayerField(true);
     for (const e of cfg.entities) for (let k = 0; k < e.count; k++) this.entities.push(spawnEntity(this, e.type, 16));
     this.escalated = new Set();
@@ -186,6 +204,7 @@ class Game {
     this.nextHalluc = 15;
     this.hbTimer = 0;
     this.audio.startAmbient(cfg.theme);
+    this.audio.startMusic(cfg.theme);
     // シェーダを事前コンパイル
     this.player.update(0.016, this.input);
     this.renderer.compile(this.scene, this.camera);
@@ -201,6 +220,8 @@ class Game {
     this.input.reset();
     this.input.enabled = true;
     this.state = 'play';
+    this.saveTimer = 0;
+    this.saveProgress();
     this.clock.getDelta();
     this.lockPointer();
     if (i === 0) setTimeout(() => this.say(this.input.isTouch ? '足元のメモを拾ってみよう' : 'クリックで視点操作 / 足元のメモを拾ってみよう', 5), 800);
@@ -213,6 +234,7 @@ class Game {
     this.items?.dispose(); this.items = null;
     this.world?.dispose(); this.world = null;
     this.audio.stopAmbient?.();
+    this.audio.stopMusic?.();
   }
 
   toTitle() {
@@ -221,8 +243,7 @@ class Game {
     this.input.enabled = false;
     if (document.pointerLockElement) document.exitPointerLock();
     $('hud').classList.add('hidden'); $('touch').classList.add('hidden');
-    $('btn-continue').disabled = !(this.save.level > 0);
-    $('btn-continue').textContent = this.save.level > 0 ? `つづきから (${LEVELS[this.save.level].code})` : 'つづきから';
+    this.updateContinueButton();
     this.show('screen-title');
   }
 
@@ -230,6 +251,7 @@ class Game {
     if (this.state !== 'play') return;
     this.state = 'paused'; this.input.enabled = false;
     this.audio.suspend();
+    this.saveProgress();
     this.show('screen-pause');
   }
   resume() {
@@ -239,8 +261,24 @@ class Game {
 
   updateObjective() { $('objective').textContent = this.cfg.objective(this.keysGot, this.cfg.key.count); }
 
+  saveProgress() {
+    if (!this.cfg || !this.player || !this.save.hasSave) return;
+    const p = this.player;
+    this.save.progress = {
+      level: this.levelIndex,
+      keysGot: this.keysGot,
+      collected: [...(this.collected || [])],
+      sanity: p.sanity,
+      stamina: p.stamina,
+      battery: p.battery,
+      waters: p.waters,
+    };
+    store(SAVE_KEY, this.save);
+  }
+
   onPickup(it) {
     const p = this.player;
+    if (it.id && it.type !== 'note') this.collected.add(it.id);
     if (it.type === 'key') {
       this.keysGot++;
       this.audio.keyPickup();
@@ -268,13 +306,14 @@ class Game {
       if (document.pointerLockElement) document.exitPointerLock();
       this.show('screen-note');
     }
+    this.saveProgress();
   }
 
   drink() {
     const p = this.player;
     if (p.waters <= 0) { this.say('アーモンド水を持っていない'); return; }
     if (p.sanity > 95) { this.say('今は必要ない'); return; }
-    p.waters--; p.sanity = Math.min(100, p.sanity + 45); this.audio.drink(); this.say('アーモンド水を飲んだ。少し落ち着いた');
+    p.waters--; p.sanity = Math.min(100, p.sanity + 45); this.audio.drink(); this.say('アーモンド水を飲んだ。少し落ち着いた'); this.saveProgress();
   }
 
   makeNoise(pos, radius) { for (const e of this.entities) e.hear?.(pos, radius); }
@@ -313,7 +352,7 @@ class Game {
       $('fade').classList.remove('on');
       if (this.levelIndex + 1 >= LEVELS.length) {
         this.cleanupLevel();
-        this.save = { level: 0, seeds: {}, cleared: true }; store(SAVE_KEY, this.save);
+        this.save = { level: 0, seeds: {}, hasSave: false, cleared: true }; store(SAVE_KEY, this.save);
         $('hud').classList.add('hidden'); $('touch').classList.add('hidden');
         if (document.pointerLockElement) document.exitPointerLock();
         $('ending-text').innerHTML = ENDING_TEXT.replace(/\n/g, '<br>');
@@ -420,6 +459,8 @@ class Game {
     this.items.update(dt, this.time);
     w.update(dt, p.pos, this.time);
     this.randomEvents(dt);
+    this.saveTimer = (this.saveTimer || 0) + dt;
+    if (this.saveTimer > 5) { this.saveTimer = 0; this.saveProgress(); }
 
     // 恐怖度
     let fear = 0;

@@ -51,7 +51,11 @@ export class Items {
     this.game = game;
     this.list = [];
     const w = game.world, map = w.map, halo = w.common.halo;
+    let itemIndex = 0;
     const add = (p, type, mesh, color, extra = {}) => {
+      const id = `${type}-${itemIndex++}`;
+      // 自動セーブから再開した場合、既に拾った消耗品や鍵は復活させない。
+      if (game.collected?.has(id)) return;
       const c = w.tileCenter(p.x, p.y);
       c.x += (Math.random() - 0.5) * w.T * 0.4; c.z += (Math.random() - 0.5) * w.T * 0.4;
       const g = new THREE.Group();
@@ -62,7 +66,7 @@ export class Items {
       g.position.set(c.x, type === 'note' ? 0.01 : 0.55, c.z);
       if (type === 'note') { s.position.y = 0.05; s.material.opacity = 0.25; }
       game.scene.add(g);
-      this.list.push({ type, g, mesh, pos: c, alive: true, phase: Math.random() * 6, ...extra });
+      this.list.push({ id, type, g, mesh, pos: c, alive: true, phase: Math.random() * 6, ...extra });
     };
     const keyColor = { key: 0xffd26a, fuse: 0x7ac8ff, valve: 0xff5a3a }[game.cfg.key.kind];
     for (const p of map.keys) add(p, 'key', keyMesh(game.cfg.key.kind), keyColor);

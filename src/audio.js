@@ -1,6 +1,6 @@
 // 音声ファイルを使わず、WebAudioで効果音・環境音を合成する
 export class Audio {
-  constructor() { this.ctx = null; this.volume = 0.8; }
+  constructor() { this.ctx = null; this.volume = 1; this.ambientVolume = 0.8; this.musicVolume = 0.3; }
 
   init() {
     if (this.ctx) { if (this.ctx.state === 'suspended') this.ctx.resume(); return; }
@@ -8,9 +8,11 @@ export class Audio {
     if (!AC) return;
     const ctx = this.ctx = new AC();
     this.master = ctx.createGain(); this.master.gain.value = this.volume;
+    this.ambientBus = ctx.createGain(); this.ambientBus.gain.value = this.ambientVolume;
+    this.musicBus = ctx.createGain(); this.musicBus.gain.value = this.musicVolume;
     const comp = ctx.createDynamicsCompressor();
     comp.threshold.value = -12; comp.ratio.value = 4;
-    this.master.connect(comp); comp.connect(ctx.destination);
+    this.master.connect(comp); this.ambientBus.connect(this.master); this.musicBus.connect(this.master); comp.connect(ctx.destination);
     // ホワイトノイズ
     const len = ctx.sampleRate * 2;
     this.noiseBuf = ctx.createBuffer(1, len, ctx.sampleRate);
@@ -24,6 +26,8 @@ export class Audio {
   }
 
   setVolume(v) { this.volume = v; if (this.master) this.master.gain.value = v; }
+  setAmbientVolume(v) { this.ambientVolume = v; if (this.ambientBus) this.ambientBus.gain.setTargetAtTime(v, this.t, 0.04); }
+  setMusicVolume(v) { this.musicVolume = v; if (this.musicBus) this.musicBus.gain.setTargetAtTime(v, this.t, 0.04); }
   suspend() { this.ctx && this.ctx.suspend(); }
   resume() { this.ctx && this.ctx.resume(); }
   get t() { return this.ctx.currentTime; }
@@ -52,20 +56,27 @@ export class Audio {
     this.humGain = null;
   }
 
+  stopMusic() {
+    for (const n of this.music || []) { try { n.stop ? n.stop() : n.disconnect(); } catch (e) { /* noop */ } }
+    this.music = [];
+  }
+
   startAmbient(theme) {
     if (!this.ctx) return;
     this.stopAmbient();
     const A = this.ambient;
-    const out = this.gain(1); out.connect(this.master); A.push(out);
-    // 蛍光灯の唸り(照明の近さで音量変化)
+    const out = this.gain(1); out.connect(this.ambientBus); A.push(out);
+    // 蛍光灯を使う階層だけ、照明の近さで変わるハム音を鳴らす。
     this.humGain = this.gain(0);
-    const humF = this.filter('lowpass', theme === 'pipes' ? 300 : 900, 2);
+    const humF = this.filter('lowpass', 900, 2);
     this.chain(humF, this.humGain, out);
-    for (const [f, type, v] of [[60, 'sawtooth', 0.05], [120, 'square', 0.02], [180.5, 'sawtooth', 0.015]]) {
-      const o = this.osc(type, f); const g = this.gain(v); o.connect(g); g.connect(humF); o.start(); A.push(o);
+    if (theme === 'lobby' || theme === 'parking') {
+      for (const [f, type, v] of [[60, 'sawtooth', 0.05], [120, 'square', 0.02], [180.5, 'sawtooth', 0.015]]) {
+        const o = this.osc(type, f); const g = this.gain(v); o.connect(g); g.connect(humF); o.start(); A.push(o);
+      }
+      const buzz = this.noise(); const bf = this.filter('bandpass', 3200, 6); const bg = this.gain(0.012);
+      this.chain(buzz, bf, bg, this.humGain); buzz.start(); A.push(buzz);
     }
-    const buzz = this.noise(); const bf = this.filter('bandpass', 3200, 6); const bg = this.gain(0.012);
-    this.chain(buzz, bf, bg, this.humGain); buzz.start(); A.push(buzz);
 
     // 低いうなり(ドローン)
     const drone = this.noise(true);
@@ -82,6 +93,24 @@ export class Audio {
   setHum(level) {
     if (!this.humGain) return;
     this.humGain.gain.setTargetAtTime(Math.min(1.4, level), this.t, 0.15);
+  }
+
+  // 効果音・環境音とは別バスに送る、控えめな持続BGM。
+  startMusic(theme) {
+    if (!this.ctx) return;
+    this.stopMusic();
+    const M = this.music = [];
+    const out = this.gain(1); out.connect(this.musicBus); M.push(out);
+    const filter = this.filter('lowpass', theme === 'pipes' ? 420 : 620, 1.5); filter.connect(out);
+    const notes = theme === 'lobby' ? [55, 82.41, 110] : theme === 'parking' ? [49, 73.42, 98] : [46.25, 69.3, 92.5];
+    notes.forEach((freq, i) => {
+      const o = this.osc(i === 1 ? 'sine' : 'triangle', freq);
+      const g = this.gain(0.018 + i * 0.006);
+      const lfo = this.osc('sine', 0.035 + i * 0.012);
+      const lg = this.gain(0.012);
+      lfo.connect(lg); lg.connect(g.gain);
+      this.chain(o, g, filter); o.start(); lfo.start(); M.push(o, lfo);
+    });
   }
 
   /* ---------- 効果音 ---------- */

@@ -10,7 +10,7 @@ html, body {
 .hidden { display: none !important; }
 
 /* ---------- HUD ---------- */
-#hud { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
+#hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
 #hud-top {
   position: absolute; top: max(10px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
   text-align: center; text-shadow: 0 0 6px #000, 0 0 2px #000;
@@ -50,6 +50,7 @@ html, body {
   pointer-events: auto; width: 40px; height: 40px; border-radius: 50%;
   background: rgba(0,0,0,.35); color: #ddd; border: 1px solid rgba(255,255,255,.25); font-weight: bold;
 }
+.icon-btn:active { background: rgba(233,220,138,.35); transform: scale(.94); }
 
 /* ---------- Touch ---------- */
 #touch { position: fixed; inset: 0; z-index: 6; pointer-events: none; }
