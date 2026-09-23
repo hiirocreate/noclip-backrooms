@@ -1,8 +1,0 @@
-{
-  "appId": "jp.noclip.backrooms",
-  "appName": "NOCLIP",
-  "webDir": "dist",
-  "android": {
-    "backgroundColor": "#000000"
-  }
-}
