@@ -6,22 +6,40 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write   # GitHub Release を作るため
+  actions: write    # Web版の再公開を起動するため
 
 jobs:
   build-apk:
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+
+      # ブラウザからまとめてアップロードした project.b64 があれば展開してリポジトリに反映(初回のみ)
+      - name: Extract uploaded project
+        if: hashFiles('project.b64') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          base64 -d project.b64 > project.zip
+          unzip -o -q project.zip
+          rm -f project.b64 project.zip
+          git rm -f -q --ignore-unmatch src/levels.js
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "v$(node -p "require('./package.json').version") を展開"
+          git push
+          gh workflow run deploy-pages.yml --ref main || echo "Web版の再公開は手動で実行してください"
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 20
 
       - name: Set up Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
@@ -37,23 +55,74 @@ jobs:
           npx cap add android
           npx cap sync android
 
-      - name: Generate Android launcher icons
+      - name: Read app version
+        id: ver
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      # 署名鍵(GitHub の Secrets に登録したもの)を復元
+      - name: Prepare signing key
+        id: sign
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 || secrets.NOCLIP }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | tr -d ' \r\n' | base64 -d > "$RUNNER_TEMP/release.keystore" || true
+            if keytool -list -keystore "$RUNNER_TEMP/release.keystore" -storepass "$KEYSTORE_PASSWORD" >/dev/null 2>&1; then
+              echo "KEYSTORE_PATH=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
+              echo "signed=true" >> "$GITHUB_OUTPUT"
+              echo "署名キーを確認しました"
+              exit 0
+            fi
+            echo "::warning::署名キーを読み込めませんでした(Secrets の値かパスワードを確認してください)。デバッグ署名でビルドします"
+          else
+            echo "::warning::KEYSTORE_BASE64 が未登録のため、デバッグ署名でビルドします(上書き更新はできません)"
+          fi
+          echo "signed=false" >> "$GITHUB_OUTPUT"
+
+      - name: Apply Android overrides (全画面・横画面・アイコン・バージョン・署名)
+        env:
+          VERSION_NAME: ${{ steps.ver.outputs.version }}
+          VERSION_CODE: ${{ github.run_number }}
         run: |
           python -m pip install --disable-pip-version-check Pillow
-          python scripts/make_icons.py
+          python scripts/patch_android.py
 
-      - name: Apply Android full-screen overrides
-        run: |
-          cp android-overrides/java/MainActivity.java android/app/src/main/java/jp/noclip/backrooms/MainActivity.java
-          cp android-overrides/res/values/ic_launcher_background.xml android/app/src/main/res/values/ic_launcher_background.xml
-
-      - name: Assemble debug APK
+      - name: Assemble APK
         working-directory: android
-        run: ./gradlew assembleDebug
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          if [ "${{ steps.sign.outputs.signed }}" = "true" ]; then
+            ./gradlew assembleRelease --no-daemon
+            cp app/build/outputs/apk/release/app-release.apk "../NOCLIP-v${{ steps.ver.outputs.version }}.apk"
+          else
+            ./gradlew assembleDebug --no-daemon
+            cp app/build/outputs/apk/debug/app-debug.apk "../NOCLIP-v${{ steps.ver.outputs.version }}-debug.apk"
+          fi
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: NOCLIP-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: NOCLIP-v*.apk
           if-no-files-found: error
+
+      # package.json の version が新しいときだけ Release を作る → アプリの「更新のお知らせ」に出る
+      - name: Create GitHub Release
+        if: steps.sign.outputs.signed == 'true' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          TAG="v$VERSION"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG は作成済みのためスキップします"
+          else
+            NOTES="release-notes/$VERSION.md"
+            [ -f "$NOTES" ] || echo "NOCLIP v$VERSION" > "$NOTES"
+            gh release create "$TAG" "NOCLIP-v$VERSION.apk" --title "NOCLIP v$VERSION" --notes-file "$NOTES"
+          fi
