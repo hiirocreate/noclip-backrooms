@@ -203,6 +203,23 @@ export class Audio {
     const n = this.noise(); const ng = this.gain(0.6); this.chain(n, ng, ws); this.oneShot(n, 1.6);
   }
 
+  // 正気度が尽きた時だけ鳴る、内耳の耳鳴りと低い脈動。
+  sanityCollapse() {
+    if (!this.ctx) return;
+    const t = this.t;
+    const n = this.noise(); const nf = this.filter('bandpass', 2400, 7); const ng = this.gain();
+    this.chain(n, nf, ng, this.master);
+    nf.frequency.setValueAtTime(900, t);
+    nf.frequency.exponentialRampToValueAtTime(4200, t + 0.75);
+    this.env(ng, t, 0.01, 0.28, 1.25);
+    this.oneShot(n, 1.35);
+    const o = this.osc('sine', 36); const og = this.gain();
+    this.chain(o, og, this.master);
+    o.frequency.setValueAtTime(58, t); o.frequency.exponentialRampToValueAtTime(24, t + 1.15);
+    this.env(og, t, 0.015, 0.52, 1.2);
+    this.oneShot(o, 1.3);
+  }
+
   unlock() {
     if (!this.ctx) return;
     const t = this.t;

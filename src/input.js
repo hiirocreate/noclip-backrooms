@@ -96,11 +96,25 @@ export class Input {
     lookZone.addEventListener('pointercancel', endLook);
 
     const runBtn = document.getElementById('btn-run');
+    // 指がボタンの縁からわずかに外れてもダッシュを止めない。pointer capture
+    // により、離した／キャンセルされた時だけ確実に解除される。
     const hold = (el, on, off) => {
-      el.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); on(); });
-      el.addEventListener('pointerup', (e) => { e.preventDefault(); off(); });
-      el.addEventListener('pointercancel', off);
-      el.addEventListener('pointerleave', off);
+      let activePointer = null;
+      const release = (e) => {
+        if (e && activePointer !== null && e.pointerId !== activePointer) return;
+        activePointer = null;
+        off();
+      };
+      el.addEventListener('pointerdown', (e) => {
+        if (activePointer !== null) return;
+        e.preventDefault(); e.stopPropagation();
+        activePointer = e.pointerId;
+        el.setPointerCapture?.(e.pointerId);
+        on();
+      });
+      el.addEventListener('pointerup', (e) => { e.preventDefault(); release(e); });
+      el.addEventListener('pointercancel', release);
+      el.addEventListener('lostpointercapture', release);
     };
     hold(runBtn, () => { this.touchRun = true; runBtn.classList.add('on'); }, () => { this.touchRun = false; runBtn.classList.remove('on'); });
     const tap = (id, fn) => document.getElementById(id).addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); fn(); });
@@ -127,7 +141,7 @@ export class Input {
 
   reset() {
     this.keys = {}; this.actions.clear(); this.look.x = this.look.y = 0;
-    this.touchMove = null; this.touchRun = false; this.crouch = false;
+    this.touchMove = null; this.touchRun = false; this.stickRun = false; this.crouch = false;
     document.getElementById('btn-crouch')?.classList.remove('on');
   }
 }

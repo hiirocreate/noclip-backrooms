@@ -85,7 +85,16 @@ class Game {
     click('btn-retry', () => this.startLevel(this.levelIndex, true));
     click('btn-dead-quit', () => this.toTitle());
     click('btn-ending-quit', () => this.toTitle());
-    click('btn-note-close', () => { this.show(null); this.state = 'play'; this.input.actions.clear(); this.input.reset(); this.clock.getDelta(); this.lockPointer(); });
+    click('btn-note-close', () => {
+      this.show(null);
+      this.state = 'play';
+      this.input.reset();
+      // メモを開く間だけ入力を止める。ここで戻し忘れると F/Q/C/Esc/P が
+      // 以後無効になる（WASD とマウスは別の経路のため症状が分かりにくい）。
+      this.input.enabled = true;
+      this.clock.getDelta();
+      this.lockPointer();
+    });
 
     const s = this.settings;
     const sens = $('set-sens'), q = $('set-quality'), vol = $('set-volume'), inv = $('set-invert'), sh = $('set-shake');
@@ -161,6 +170,10 @@ class Game {
       if (!this.world.solid(map.start.x + dx, map.start.y + dy)) { yaw = a; break; }
     }
     this.player.spawn(st.x, st.z, yaw);
+    this.camera.fov = 72;
+    this.camera.rotation.z = 0;
+    this.camera.updateProjectionMatrix();
+    $('scare').classList.remove('sanity');
     if (i === 0 && !retry) { this.player.battery = 100; this.player.waters = 1; }
     this.player.flashlight = false; $('btn-light').classList.remove('on');
     this.keysGot = 0;
@@ -278,6 +291,15 @@ class Game {
     this.audio.scare();
     const killer = this.entities.find(e => e.type === cause);
     this.dyingT = 0; this.killer = cause === 'sanity' ? null : killer;
+    this.deathStart = this.camera.position.clone();
+    this.deathFov = this.camera.fov;
+    if (cause === 'sanity') {
+      this.audio.sanityCollapse();
+      $('scare').classList.remove('sanity');
+      // アニメーションを毎回最初から再生する。
+      void $('scare').offsetWidth;
+      $('scare').classList.add('sanity');
+    }
     if (document.pointerLockElement) document.exitPointerLock();
     const [t, d] = DEATH[cause];
     $('dead-title').textContent = t; $('dead-desc').textContent = d;
@@ -451,9 +473,25 @@ class Game {
         k.mesh.rotation.y = Math.atan2(-dir.x, -dir.z);
       }
     }
-    this.camera.position.x += (Math.random() - 0.5) * 0.04;
-    this.camera.position.y += (Math.random() - 0.5) * 0.04;
-    u.fear.value = 1; u.flash.value = this.dyingT < 0.06 ? 0.7 : Math.max(0, 0.25 - this.dyingT * 1.2);
+    if (this.killer === null) {
+      // 正気喪失は敵に襲われるのとは異なり、視界が潰れながら倒れ込む。
+      const t = Math.min(1, this.dyingT / 1.3);
+      const fall = t * t * (3 - 2 * t);
+      this.camera.position.copy(this.deathStart);
+      this.camera.position.y -= 1.05 * fall;
+      this.camera.position.x += Math.sin(this.dyingT * 38) * 0.025 * (1 - t);
+      this.camera.position.z += Math.cos(this.dyingT * 29) * 0.025 * (1 - t);
+      this.camera.rotation.z = -1.15 * fall + Math.sin(this.dyingT * 25) * 0.08 * (1 - t);
+      this.camera.fov = this.deathFov + (42 - this.deathFov) * fall;
+      this.camera.updateProjectionMatrix();
+      u.insanity.value = 1;
+      u.flash.value = this.dyingT < 0.12 || (this.dyingT > 0.42 && this.dyingT < 0.5) ? 0.9 : Math.max(0, 0.2 - this.dyingT * 0.1);
+    } else {
+      this.camera.position.x += (Math.random() - 0.5) * 0.04;
+      this.camera.position.y += (Math.random() - 0.5) * 0.04;
+      u.flash.value = this.dyingT < 0.06 ? 0.7 : Math.max(0, 0.25 - this.dyingT * 1.2);
+    }
+    u.fear.value = 1;
     this.player.light.intensity = 30;
     if (this.dyingT > 1.3 && this.state === 'dying') {
       this.state = 'dead';
