@@ -168,7 +168,17 @@ class Game {
     this.fx.setPixelRatio(r);
     this.fx.setSize(innerWidth, innerHeight);
     this.camera.aspect = innerWidth / innerHeight;
+    if (this.state !== 'dying') this.camera.fov = this.baseFov();
     this.camera.updateProjectionMatrix();
+    document.body.classList.toggle('portrait', innerHeight > innerWidth);
+  }
+
+  // 縦画面でも視野が狭くなりすぎないよう、横方向の視野角を確保する
+  baseFov() {
+    const aspect = innerWidth / innerHeight;
+    if (aspect >= 1) return 72;
+    const v = 2 * Math.atan(Math.tan((64 / 2) * Math.PI / 180) / aspect) * 180 / Math.PI;
+    return Math.min(100, Math.max(72, v));
   }
 
   lockPointer() {
@@ -256,7 +266,6 @@ class Game {
     this.input.enabled = false;
     if (this.input.isTouch && document.documentElement.requestFullscreen && !document.fullscreenElement && !isNative()) {
       document.documentElement.requestFullscreen().catch(() => {});
-      screen.orientation?.lock?.('landscape').catch(() => {});
     }
     $('intro-level').textContent = def.code;
     $('intro-name').textContent = `${def.name}`;
@@ -298,7 +307,7 @@ class Game {
       this.player.battery = resume.battery;
       this.player.waters = resume.waters;
     }
-    this.camera.fov = 72;
+    this.camera.fov = this.baseFov();
     this.camera.rotation.z = 0;
     this.camera.updateProjectionMatrix();
     $('scare').classList.remove('sanity');
