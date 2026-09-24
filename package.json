@@ -1,7 +1,7 @@
 {
   "name": "noclip-backrooms",
   "private": true,
-  "version": "1.2.0",
+  "version": "1.2.1",
   "type": "module",
   "scripts": {
     "dev": "vite --host",
@@ -12,6 +12,7 @@
   "dependencies": {
     "@capacitor/android": "^6.1.2",
     "@capacitor/app": "^6.0.3",
+    "@capacitor/app-launcher": "^6.0.4",
     "@capacitor/browser": "^6.0.6",
     "@capacitor/core": "^6.1.2",
     "three": "^0.169.0"

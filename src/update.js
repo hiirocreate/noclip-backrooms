@@ -1,6 +1,7 @@
 // 更新のお知らせ：GitHub Releases の最新版とアプリのバージョンを比べる
 import { Capacitor } from '@capacitor/core';
 import { Browser } from '@capacitor/browser';
+import { AppLauncher } from '@capacitor/app-launcher';
 import { APP_VERSION, UPDATE_REPO } from './config.js';
 
 export function compareVersion(a, b) {
@@ -26,7 +27,12 @@ export async function checkForUpdate() {
   } catch (e) { return null; }
 }
 
+// アプリ内ブラウザ(Custom Tabs)では APK のダウンロードが完了直前で止まることがあるため、
+// 端末の標準ブラウザ(Chrome など)で開いてダウンロードさせる
 export async function openExternal(url) {
-  try { if (isNative()) { await Browser.open({ url }); return; } } catch (e) { /* 失敗したら下へ */ }
+  if (isNative()) {
+    try { const r = await AppLauncher.openUrl({ url }); if (r?.completed !== false) return; } catch (e) { /* 失敗したら下へ */ }
+    try { await Browser.open({ url }); return; } catch (e) { /* 失敗したら下へ */ }
+  }
   window.open(url, '_blank');
 }
