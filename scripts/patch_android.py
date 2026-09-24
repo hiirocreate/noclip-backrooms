@@ -32,11 +32,17 @@ def write(p, s):
 dst = os.path.join(APP, 'src/main/java/jp/noclip/backrooms/MainActivity.java')
 shutil.copy(os.path.join(OVR, 'java/MainActivity.java'), dst)
 
-# 2) 横画面固定
+# 2) 画面の向き: 縦横どちらでも自由に回転(端末の自動回転設定に従う)
 manifest = os.path.join(APP, 'src/main/AndroidManifest.xml')
 m = read(manifest)
-if 'screenOrientation' not in m:
-    m = re.sub(r'(android:name="[^"]*MainActivity")', r'\1 android:screenOrientation="sensorLandscape"', m, count=1)
+m = re.sub(r'\s*android:screenOrientation="[^"]*"', '', m)
+m = re.sub(r'(android:name="[^"]*MainActivity")', r'\1 android:screenOrientation="user"', m, count=1)
+# 回転時にWebViewを作り直さない(ゲーム状態を保持)
+cc = 'orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|screenLayout|uiMode|locale|navigation|density'
+if 'android:configChanges' in m:
+    m = re.sub(r'android:configChanges="[^"]*"', 'android:configChanges="%s"' % cc, m, count=1)
+else:
+    m = re.sub(r'(android:name="[^"]*MainActivity")', r'\1 android:configChanges="%s"' % cc, m, count=1)
 write(manifest, m)
 
 # 3) アイコン(生成してコピー)
