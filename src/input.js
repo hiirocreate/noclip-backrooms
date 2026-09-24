@@ -51,7 +51,7 @@ export class Input {
     const lookZone = document.getElementById('look-zone');
     const R = 50;
     let stickId = null, sx = 0, sy = 0;
-    const defaultPos = () => { base.style.left = '60px'; base.style.top = ''; base.style.bottom = '50px'; };
+    const defaultPos = () => { base.style.left = ''; base.style.top = ''; base.style.bottom = ''; };
 
     zone.addEventListener('pointerdown', (e) => {
       if (stickId !== null) return;
