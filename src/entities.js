@@ -183,7 +183,7 @@ export class Wanderer extends Entity {
         if (this.followField(this.field, this.target, speed, dt) || this.stateTime > 10) this.setState('pause');
         break;
     }
-    if (this.distToPlayer() < 0.85) g.kill('wanderer');
+    if (this.distToPlayer() < 0.85) g.kill(this.type);
 
     // アニメーション
     const m = this.mesh; m.position.set(this.pos.x, 0, this.pos.z); m.rotation.y = this.heading;
@@ -410,6 +410,119 @@ export class Duller extends Wanderer {
   setTarget(x, z) { this.target = new THREE.Vector3(x, 0, z); }
 }
 
+
+/* ============ ボイラー室の主 : 大きく、ゆっくり歩き、見つけると追ってくる(Level 5) ============ */
+export class Beast extends Wanderer {
+  constructor(game, pos, { home = null, range = 10 } = {}) {
+    super(game, pos);
+    this.type = 'beast';
+    this.voice?.stop(); this.voice = game.audio.entityVoice('beast');
+    this.walkSpeed = 0.95; this.chaseSpeed = 3.5;
+    this.home = home ? home.clone() : pos.clone(); this.range = range;
+    const mat = new THREE.MeshLambertMaterial({ color: 0x1a0c08, emissive: 0x120604 });
+    this.mesh.traverse(o => { if (o.isMesh) o.material = mat; });
+    this.torso.scale.set(1.9, 1, 1.6);
+    this.head.scale.set(1.5, 1.2, 1.4);
+    this.eyes.material.color.set(0xff6a3a);
+    this.randomTarget();
+  }
+  // 縄張り(ボイラー室の周り)から離れない
+  randomTarget() {
+    if (!this.home) return super.randomTarget();
+    const list = this.world.map.floorList, T = this.world.T;
+    for (let i = 0; i < 40; i++) {
+      const p = list[Math.floor(Math.random() * list.length)];
+      const c = this.world.tileCenter(p.x, p.y);
+      if (Math.hypot(c.x - this.home.x, c.z - this.home.z) < this.range * T) { this.setTarget(c.x, c.z); return; }
+    }
+    this.setTarget(this.home.x, this.home.z);
+  }
+  footsteps(dt, speed) { super.footsteps(dt, speed, 1.9); }
+}
+
+/* ============ 洞窟の蜘蛛 : 巣で待ち、糸の震えに向かって走る(Level 8) ============ */
+export class Spider extends Entity {
+  constructor(game, pos) {
+    super(game, 'spider', pos);
+    const mat = new THREE.MeshLambertMaterial({ color: 0x17120e, emissive: 0x060403 });
+    const g = new THREE.Group();
+    const abd = new THREE.Mesh(new THREE.SphereGeometry(0.42, 10, 8), mat); abd.scale.set(1, 0.8, 1.3); abd.position.set(0, 0.62, -0.45); g.add(abd);
+    const ceph = new THREE.Mesh(new THREE.SphereGeometry(0.26, 9, 7), mat); ceph.position.set(0, 0.55, 0.12); g.add(ceph);
+    // 赤く光る目
+    const eyeMat = new THREE.MeshBasicMaterial({ color: 0xff2a1a, fog: false });
+    this.eyeMat = eyeMat;
+    for (const [x, y] of [[-0.07, 0.66], [0.07, 0.66], [-0.12, 0.6], [0.12, 0.6], [-0.04, 0.72], [0.04, 0.72]]) {
+      const e = new THREE.Mesh(new THREE.SphereGeometry(0.025, 5, 4), eyeMat); e.position.set(x, y, 0.36); g.add(e);
+    }
+    // 8本の脚(付け根・膝の2関節)
+    this.legs = [];
+    for (let i = 0; i < 8; i++) {
+      const side = i < 4 ? -1 : 1, k = i % 4;
+      const root = new THREE.Group(); root.position.set(side * 0.18, 0.58, 0.28 - k * 0.14);
+      root.rotation.y = side * (0.9 - k * 0.45) + (side < 0 ? Math.PI : 0);
+      const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.025, 0.75, 5), mat);
+      upper.rotation.z = -Math.PI / 3.2; upper.position.set(0.3, 0.2, 0); root.add(upper);
+      const knee = new THREE.Group(); knee.position.set(0.62, 0.4, 0); root.add(knee);
+      const lower = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.008, 1.0, 5), mat);
+      lower.rotation.z = Math.PI / 5; lower.position.set(0.28, -0.45, 0); knee.add(lower);
+      g.add(root); this.legs.push({ root, knee, base: root.rotation.y });
+    }
+    this.mesh = g; game.scene.add(g);
+    this.home = pos.clone();
+    this.state = 'wait';
+    this.huntSpeed = 5.6; this.chaseSpeed = 4.3;
+  }
+
+  // 糸の震え・大きな物音に反応(歩く足音程度では気づかない)
+  hear(pos, radius) {
+    if (radius < 12 || this.state === 'chase') return;
+    const d = Math.hypot(pos.x - this.pos.x, pos.z - this.pos.z);
+    if (d < radius * 1.5) { if (this.state !== 'hunt') this.game.onChaseStart(this); this.setState('hunt'); this.setTarget(pos.x, pos.z); }
+  }
+
+  update(dt, t) {
+    this.stateTime += dt;
+    const g = this.game, p = g.player, w = this.world;
+    const d = this.distToPlayer();
+    let speed = 0;
+    // 至近距離なら気づく
+    if (this.state !== 'chase' && d < (p.crouching ? 2.2 : 3.6) && w.los(this.pos.x, this.pos.z, p.pos.x, p.pos.z)) {
+      if (this.state !== 'hunt') g.onChaseStart(this);
+      this.setState('chase');
+    }
+    switch (this.state) {
+      case 'wait':
+        this.heading += Math.sin(t * 0.7 + this.home.x) * dt * 0.4;
+        break;
+      case 'hunt':
+        speed = this.huntSpeed;
+        if (this.followField(this.field, this.target, speed, dt) || this.stateTime > 10) { this.setState('return'); this.setTarget(this.home.x, this.home.z); g.onChaseEnd(this); }
+        break;
+      case 'chase':
+        speed = this.chaseSpeed;
+        this.followField(g.playerField, p.pos, speed, dt);
+        if (this.stateTime > 7 || d > 16) { this.setState('return'); this.setTarget(this.home.x, this.home.z); g.onChaseEnd(this); }
+        break;
+      case 'return':
+        speed = 1.6;
+        if (this.followField(this.field, this.target, speed, dt)) this.setState('wait');
+        break;
+    }
+    if (d < 0.95) g.kill('spider');
+    const m = this.mesh; m.position.set(this.pos.x, 0, this.pos.z); m.rotation.y = this.heading;
+    const cyc = t * (speed > 3 ? 22 : 8);
+    this.legs.forEach((l, i) => {
+      const ph = cyc + (i % 2 ? Math.PI : 0) + (i >= 4 ? Math.PI / 2 : 0);
+      const amt = speed ? 0.35 : 0.04;
+      l.root.rotation.y = l.base + Math.sin(ph) * amt;
+      l.knee.rotation.z = Math.max(0, Math.sin(ph + 1)) * amt * 0.8;
+    });
+    this.eyeMat.color.setRGB(1, this.state === 'wait' ? 0.25 : 0.1, 0.08);
+    this.footsteps(dt, speed, 0.5);
+    this.voice?.set(tmp.set(this.pos.x, 0.6, this.pos.z), d < 20 ? (this.state === 'wait' ? 0.25 : 1) : 0);
+  }
+}
+
 export function spawnEntity(game, type, avoidDist = 14) {
   const w = game.world;
   const field = game.playerField;
@@ -425,6 +538,8 @@ export function spawnEntity(game, type, avoidDist = 14) {
   if (type === 'wanderer') return new Wanderer(game, pos);
   if (type === 'smiler') return new Smiler(game, pos);
   if (type === 'duller') return new Duller(game, pos);
+  if (type === 'beast') return new Beast(game, pos);
+  if (type === 'spider') return new Spider(game, pos);
   return new Hound(game, pos);
 }
 

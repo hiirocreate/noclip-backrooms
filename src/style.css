@@ -1,6 +1,8 @@
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 html, body {
   margin: 0; padding: 0; width: 100%; height: 100%;
+  position: fixed; inset: 0;
   background: #000; color: #e8e2c8; overflow: hidden;
   font-family: "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", sans-serif;
   user-select: none; -webkit-user-select: none; touch-action: none;
@@ -228,3 +230,8 @@ body.portrait #touch-buttons { right: max(14px, env(safe-area-inset-right)); bot
 body.portrait .tbtn { width: 62px; height: 62px; font-size: 12px; }
 body.portrait .tbtn.small { width: 54px; height: 54px; font-size: 10px; }
 body.portrait .tbtn.use { width: 100%; height: 44px; }
+
+/* ---------- v1.2.0 拡大防止 ---------- */
+/* iOS は 16px 未満の入力欄にフォーカスすると自動で拡大するため */
+input, select, textarea { font-size: 16px !important; }
+button { touch-action: manipulation; }

@@ -288,6 +288,7 @@ export class World {
       this.lampMesh.setColorAt(i, this.lampOff);
       l.index = i;
     });
+    this.lampMesh.count = lamps.length;
     this.lampMesh.instanceMatrix.needsUpdate = true;
     this.group.add(this.lampMesh);
     this.flickerPool = [];

@@ -216,11 +216,16 @@ export class Audio {
     const n = this.noise();
     const g = this.gain();
     let f;
-    if (theme === 'lobby') f = this.filter('lowpass', 420 + Math.random() * 100, 0.7);
+    if (theme === 'water') { this.splash(loud); return; }
+    if (theme === 'lobby' || theme === 'hotel') f = this.filter('lowpass', theme === 'hotel' ? 320 + Math.random() * 80 : 420 + Math.random() * 100, 0.7);
+    else if (theme === 'cave') f = this.filter('bandpass', 1800 + Math.random() * 900, 1.2);
     else if (theme === 'parking') f = this.filter('bandpass', 1300 + Math.random() * 400, 0.9);
     else f = this.filter('bandpass', 700 + Math.random() * 200, 3);
     this.chain(n, f, g, this.master);
-    this.env(g, t, 0.005, 0.35 * loud, theme === 'lobby' ? 0.12 : 0.09);
+    this.env(g, t, 0.005, 0.35 * loud, theme === 'lobby' || theme === 'hotel' ? 0.12 : 0.09);
+    if (theme === 'cave') { // 砂利のじゃり音
+      for (let i = 0; i < 3; i++) { const n2 = this.noise(); const f2 = this.filter('highpass', 3000); const g2 = this.gain(); this.chain(n2, f2, g2, this.master); const tt = t + 0.01 + Math.random() * 0.06; this.env(g2, tt, 0.001, 0.12 * loud, 0.03); n2.start(tt); n2.stop(tt + 0.05); }
+    }
     this.oneShot(n, 0.3);
     if (theme === 'pipes') {
       const o = this.osc('triangle', 220 + Math.random() * 60); const og = this.gain();
@@ -432,6 +437,71 @@ export class Audio {
     this.env(og, t, 0.05, 0.15, 1); this.oneShot(o, 1.1);
   }
 
+
+  // 水の中を歩く音
+  splash(loud = 1) {
+    if (!this.ctx) return;
+    const t = this.t;
+    const n = this.noise(); const f = this.filter('bandpass', 600 + Math.random() * 400, 0.8); const g = this.gain();
+    this.chain(n, f, g, this.master);
+    f.frequency.setValueAtTime(1400, t); f.frequency.exponentialRampToValueAtTime(350, t + 0.35);
+    this.env(g, t, 0.02, 0.45 * loud, 0.35); this.oneShot(n, 0.45);
+    for (let i = 0; i < 3; i++) {
+      const o = this.osc('sine', 500 + Math.random() * 700); const og = this.gain(); this.chain(o, og, this.master);
+      const tt = t + 0.05 + Math.random() * 0.2; o.frequency.setValueAtTime(o.frequency.value, tt); o.frequency.exponentialRampToValueAtTime(o.frequency.value * 1.8, tt + 0.05);
+      this.env(og, tt, 0.002, 0.04 * loud, 0.06); o.start(tt); o.stop(tt + 0.1);
+    }
+  }
+
+  // 手を叩く(残響つき)
+  clap() {
+    if (!this.ctx) return;
+    const t = this.t;
+    for (let i = 0; i < 2; i++) {
+      const n = this.noise(); const f = this.filter('bandpass', 1400, 0.9); const g = this.gain();
+      this.chain(n, f, g, this.master); const tt = t + i * 0.012; this.env(g, tt, 0.001, 1.2, 0.06); n.start(tt); n.stop(tt + 0.1);
+    }
+    // 反響(遅れて返ってくる)
+    [0.18, 0.37, 0.61].forEach((d, i) => {
+      const n = this.noise(); const f = this.filter('bandpass', 1100 - i * 250, 1.2); const g = this.gain();
+      this.chain(n, f, g, this.master); this.env(g, t + d, 0.002, 0.35 / (i + 1), 0.12); n.start(t + d); n.stop(t + d + 0.2);
+    });
+  }
+
+  // 蜘蛛の巣に絡まる
+  webStretch() {
+    if (!this.ctx) return;
+    const t = this.t;
+    const n = this.noise(); const f = this.filter('bandpass', 3500, 6); const g = this.gain();
+    this.chain(n, f, g, this.master);
+    f.frequency.setValueAtTime(5000, t); f.frequency.exponentialRampToValueAtTime(1800, t + 0.6);
+    this.env(g, t, 0.02, 0.35, 0.6); this.oneShot(n, 0.7);
+    const o = this.osc('triangle', 90); const og = this.gain(); this.chain(o, og, this.master);
+    o.frequency.setValueAtTime(90, t); o.frequency.linearRampToValueAtTime(140, t + 0.5);
+    this.env(og, t, 0.05, 0.12, 0.6); this.oneShot(o, 0.7);
+  }
+
+  // 水の下から「それ」が上がってくる
+  rise() {
+    if (!this.ctx) return;
+    const t = this.t;
+    const n = this.noise(true); const f = this.filter('lowpass', 300); const g = this.gain();
+    this.chain(n, f, g, this.master); f.frequency.setValueAtTime(120, t); f.frequency.exponentialRampToValueAtTime(2200, t + 0.8);
+    this.env(g, t, 0.3, 2.2, 1.2); this.oneShot(n, 1.6);
+    const o = this.osc('sawtooth', 28); const of = this.filter('lowpass', 180); const og = this.gain();
+    this.chain(o, of, og, this.master); this.env(og, t, 0.2, 0.6, 1.5); this.oneShot(o, 1.8);
+  }
+
+  // フロントの呼び鈴
+  bell(pos) {
+    const b = (out, t) => {
+      for (const [fr, v] of [[2093, 0.12], [2637, 0.06], [4186, 0.03]]) {
+        const o = this.osc('sine', fr); const g = this.gain(); this.chain(o, g, out); this.env(g, t, 0.002, v * 4, 1.8); o.start(t); o.stop(t + 2);
+      }
+    };
+    if (pos) this.at(pos, b, 2.2); else if (this.ctx) b(this.master, this.t);
+  }
+
   // 3D定位つき単発音
   at(pos, build, dur = 2) {
     if (!this.ctx) return;
@@ -493,6 +563,30 @@ export class Audio {
       } else if (kind === 'pop') {
         const n = this.noise(); const f = this.filter('highpass', 800); const g = this.gain(); this.chain(n, f, g, out); this.env(g, t, 0.001, 1.2, 0.08); this.oneShot(n, 0.12);
         const o = this.osc('sine', 3000); const og = this.gain(); this.chain(o, og, out); this.env(og, t, 0.001, 0.1, 0.3); this.oneShot(o, 0.35);
+      } else if (kind === 'clock') {
+        for (let i = 0; i < 6; i++) { const tt = t + i * 0.5; const o = this.osc('square', i % 2 ? 1900 : 1600); const f = this.filter('bandpass', 2500, 4); const g = this.gain(); this.chain(o, f, g, out); this.env(g, tt, 0.001, 0.25, 0.03); o.start(tt); o.stop(tt + 0.05); }
+      } else if (kind === 'party') {
+        // 遠くの宴会のざわめきと、グラスの触れ合う音
+        const n = this.noise(); const f = this.filter('bandpass', 700, 1.5); const g = this.gain(); this.chain(n, f, g, out);
+        g.gain.setValueAtTime(0, t); for (let i = 0; i < 16; i++) g.gain.linearRampToValueAtTime(0.25 + Math.random() * 0.35, t + i * 0.2); g.gain.linearRampToValueAtTime(0, t + 3.4); this.oneShot(n, 3.5);
+        for (let i = 0; i < 3; i++) { const o = this.osc('sine', 2600 + Math.random() * 900); const og = this.gain(); this.chain(o, og, out); const tt = t + 0.4 + Math.random() * 2.4; this.env(og, tt, 0.002, 0.08, 0.5); o.start(tt); o.stop(tt + 0.6); }
+      } else if (kind === 'bell') {
+        for (const [fr, v] of [[2093, 0.5], [2637, 0.25]]) { const o = this.osc('sine', fr); const g = this.gain(); this.chain(o, g, out); this.env(g, t, 0.002, v, 1.8); o.start(t); o.stop(t + 2); }
+      } else if (kind === 'splash') {
+        const n = this.noise(); const f = this.filter('bandpass', 500, 0.7); const g = this.gain(); this.chain(n, f, g, out);
+        f.frequency.setValueAtTime(1500, t); f.frequency.exponentialRampToValueAtTime(250, t + 0.8); this.env(g, t, 0.02, 1.0, 0.9); this.oneShot(n, 1);
+      } else if (kind === 'groan') {
+        // 深いところからの低いうなり
+        const o = this.osc('sawtooth', 38); const f = this.filter('lowpass', 160, 3); const g = this.gain(); this.chain(o, f, g, out);
+        o.frequency.setValueAtTime(34, t); o.frequency.linearRampToValueAtTime(52, t + 1.6); o.frequency.linearRampToValueAtTime(30, t + 3.2);
+        this.env(g, t, 0.8, 1.2, 2.4); this.oneShot(o, 3.4);
+      } else if (kind === 'rockfall') {
+        for (let i = 0; i < 10; i++) { const n = this.noise(); const f = this.filter('lowpass', 500 + Math.random() * 1500); const g = this.gain(); this.chain(n, f, g, out); const tt = t + i * 0.07 + Math.random() * 0.1; this.env(g, tt, 0.002, 0.9 - i * 0.07, 0.12); n.start(tt); n.stop(tt + 0.2); }
+      } else if (kind === 'skitter') {
+        for (let i = 0; i < 24; i++) { const n = this.noise(); const f = this.filter('bandpass', 4200 + Math.random() * 1800, 6); const g = this.gain(); this.chain(n, f, g, out); const tt = t + i * 0.035 + Math.random() * 0.02; this.env(g, tt, 0.001, 0.5, 0.015); n.start(tt); n.stop(tt + 0.03); }
+      } else if (kind === 'thump') {
+        const o = this.osc('sine', 60); const g = this.gain(); this.chain(o, g, out);
+        o.frequency.setValueAtTime(80, t); o.frequency.exponentialRampToValueAtTime(35, t + 0.3); this.env(g, t, 0.005, 1.2, 0.4); this.oneShot(o, 0.5);
       } else if (kind === 'drip') {
         const o = this.osc('sine', 1400); const g = this.gain(); this.chain(o, g, out);
         o.frequency.setValueAtTime(1800, t); o.frequency.exponentialRampToValueAtTime(700, t + 0.08);
@@ -521,6 +615,16 @@ export class Audio {
       const n = this.noise(); const f = this.filter('bandpass', 350, 2); const ng = this.gain(0.5);
       this.chain(n, f, ng, p); n.start(); nodes.push(n);
       const lfo = this.osc('sine', 0.3); const lg = this.gain(0.4); lfo.connect(lg); lg.connect(ng.gain); lfo.start(); nodes.push(lfo);
+    } else if (type === 'beast') {
+      // 重い呼吸
+      const n = this.noise(true); const f = this.filter('lowpass', 380, 2); const ng = this.gain(0.9);
+      this.chain(n, f, ng, p); n.start(); nodes.push(n);
+      const lfo = this.osc('sine', 0.35); const lg = this.gain(0.8); lfo.connect(lg); lg.connect(ng.gain); lfo.start(); nodes.push(lfo);
+      const o = this.osc('sawtooth', 36); const of = this.filter('lowpass', 140, 4); const og = this.gain(0.4); this.chain(o, of, og, p); o.start(); nodes.push(o);
+    } else if (type === 'spider') {
+      const n = this.noise(); const f = this.filter('bandpass', 4800, 5); const ng = this.gain(0.25);
+      this.chain(n, f, ng, p); n.start(); nodes.push(n);
+      const lfo = this.osc('square', 13); const lg = this.gain(0.25); lfo.connect(lg); lg.connect(ng.gain); lfo.start(); nodes.push(lfo);
     } else if (type === 'hound') {
       const n = this.noise(); const f = this.filter('bandpass', 700, 1.5); const ng = this.gain(0.8);
       this.chain(n, f, ng, p); n.start(); nodes.push(n);
@@ -534,7 +638,7 @@ export class Audio {
         g.gain.setTargetAtTime(level, this.t, 0.2);
       },
       step: (pos, loud = 1) => {
-        const n = this.noise(); const f = this.filter('lowpass', type === 'hound' ? 900 : 260); const sg = this.gain();
+        const n = this.noise(); const f = this.filter('lowpass', type === 'hound' ? 900 : type === 'spider' ? 3000 : type === 'beast' ? 160 : 260); const sg = this.gain();
         const sp = this.panner(); sp.positionX.value = pos.x; sp.positionY.value = 0.2; sp.positionZ.value = pos.z;
         this.chain(n, f, sg, sp, this.master); this.env(sg, this.t, 0.004, 1.3 * loud, 0.14); this.oneShot(n, 0.25);
         setTimeout(() => sp.disconnect(), 500);

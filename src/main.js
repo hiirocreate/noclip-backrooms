@@ -12,6 +12,9 @@ import { Wanderer } from './entities.js';
 import { APP_VERSION } from './config.js';
 import { checkForUpdate, openExternal, isNative, compareVersion } from './update.js';
 import { App } from '@capacitor/app';
+import { installZoomGuard } from './zoomguard.js';
+
+installZoomGuard();
 
 const $ = (id) => document.getElementById(id);
 const SAVE_KEY = 'noclip_save_v1';
@@ -29,6 +32,9 @@ const DEATH = {
   hound: ['見つかった', '音を立てすぎた。'],
   duller: ['見つかった', '灰色の人影は、壁の中からあなたを見ていた。'],
   sanity: ['正気を失った', '蛍光灯の音が、頭の中を埋め尽くした。'],
+  beast: ['見つかった', 'ボイラー室の主は、客を逃さない。'],
+  leviathan: ['引きずり込まれた', '水の下の「それ」は、ずっとあなたの足音を聞いていた。'],
+  spider: ['捕まった', '糸の震えが、すべてを知らせていた。'],
 };
 
 // セーブデータ(v2)。旧版(階層番号)のセーブも引き継ぐ
@@ -311,8 +317,10 @@ class Game {
     this.camera.rotation.z = 0;
     this.camera.updateProjectionMatrix();
     $('scare').classList.remove('sanity');
+    this.fx.u.flash.value = 0; this.fx.u.fear.value = 0; this.fx.u.insanity.value = 0;
     if (levelIndex(id) === 0 && !retry && !resume) { this.player.battery = 100; this.player.waters = 1; }
     this.player.flashlight = false; $('btn-light').classList.remove('on');
+    $('btn-light').textContent = logic.lightLabel?.() || 'ライト';
     this.collected = new Set(resume?.collected || []);
     this.items = new Items(this, logic.items());
     this.updatePlayerField(true);
@@ -567,7 +575,7 @@ class Game {
     const inp = this.input, p = this.player, w = this.world, logic = this.logic;
     inp.update();
     if (inp.consume('pause')) { this.pause(); return; }
-    if (inp.consume('light')) p.toggleLight();
+    if (inp.consume('light') && !logic.lightAction?.()) p.toggleLight();
     if (inp.consume('drink')) this.drink();
     if (inp.consume('use') && this.interact) { this.interact.action(); if (this.state !== 'play') return; }
 
@@ -621,11 +629,11 @@ class Game {
     const k = this.killer;
     if (k && k.mesh) {
       const dir = new THREE.Vector3(); this.camera.getWorldDirection(dir); dir.y = 0; dir.normalize();
-      const dist = k.type === 'smiler' ? 0.7 : k.type === 'hound' ? 1.75 : 0.75;
+      const dist = k.type === 'smiler' ? 0.7 : k.type === 'hound' || k.type === 'spider' ? 1.75 : 0.75;
       const x = this.camera.position.x + dir.x * dist, z = this.camera.position.z + dir.z * dist;
       if (k.type === 'smiler') { k.mesh.position.set(x, this.camera.position.y, z); k.mesh.material.opacity = 1; k.mesh.scale.set(1.6, 1.6, 1); }
       else {
-        k.mesh.position.set(x, k.type === 'hound' ? this.camera.position.y - 0.8 : this.camera.position.y - 2.35 * k.mesh.scale.y, z);
+        k.mesh.position.set(x, k.type === 'hound' ? this.camera.position.y - 0.8 : k.type === 'spider' ? this.camera.position.y - 1.0 : this.camera.position.y - 2.35 * k.mesh.scale.y, z);
         k.mesh.rotation.y = Math.atan2(-dir.x, -dir.z);
       }
     }

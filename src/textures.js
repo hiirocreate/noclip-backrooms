@@ -284,6 +284,141 @@ function officeCeiling() {
   return c;
 }
 
+/* ---------------- Level 5 : ホテル ---------------- */
+function hotelWall() {
+  const [c, ctx] = canvas(256, 512);
+  ctx.fillStyle = '#5a1f1c'; ctx.fillRect(0, 0, 256, 512);
+  // ダマスク柄
+  ctx.fillStyle = 'rgba(190,140,70,0.16)';
+  for (let y = 0; y < 360; y += 64) for (let x = 0; x < 256; x += 64) {
+    const ox = (y / 64) % 2 ? 32 : 0;
+    ctx.save(); ctx.translate(x + ox, y + 32);
+    ctx.beginPath(); ctx.moveTo(0, -24); ctx.bezierCurveTo(16, -10, 16, 10, 0, 24); ctx.bezierCurveTo(-16, 10, -16, -10, 0, -24); ctx.fill();
+    ctx.fillRect(-1, -30, 2, 60);
+    ctx.restore();
+  }
+  noise(ctx, 256, 512, 14);
+  // 腰壁(木)
+  ctx.fillStyle = '#3a2416'; ctx.fillRect(0, 360, 256, 152);
+  ctx.fillStyle = '#6e4a2a'; ctx.fillRect(0, 356, 256, 8);
+  ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.lineWidth = 3;
+  for (let x = 8; x < 256; x += 128) ctx.strokeRect(x, 378, 112, 112);
+  ctx.fillStyle = '#1e140c'; ctx.fillRect(0, 500, 256, 12);
+  for (let i = 0; i < 4; i++) wrapBlotch(ctx, 256, 512, rnd() * 256, rnd() * 340, 25 + rnd() * 40, 'rgba(20,5,3,A)', 0.25);
+  return c;
+}
+function hotelFloor() {
+  const [c, ctx] = canvas(256, 256);
+  ctx.fillStyle = '#4a1414'; ctx.fillRect(0, 0, 256, 256);
+  // 絨毯の模様
+  ctx.strokeStyle = 'rgba(200,150,60,0.35)'; ctx.lineWidth = 3;
+  for (let y = 0; y < 256; y += 64) for (let x = 0; x < 256; x += 64) {
+    ctx.beginPath(); ctx.moveTo(x + 32, y + 8); ctx.lineTo(x + 56, y + 32); ctx.lineTo(x + 32, y + 56); ctx.lineTo(x + 8, y + 32); ctx.closePath(); ctx.stroke();
+    ctx.fillStyle = 'rgba(20,40,30,0.5)'; ctx.fillRect(x + 28, y + 28, 8, 8);
+  }
+  noise(ctx, 256, 256, 40);
+  for (let i = 0; i < 1800; i++) { ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(rnd() * 256, rnd() * 256, 1, 2); }
+  for (let i = 0; i < 4; i++) wrapBlotch(ctx, 256, 256, rnd() * 256, rnd() * 256, 20 + rnd() * 40, 'rgba(15,5,3,A)', 0.4);
+  return c;
+}
+function hotelCeiling() {
+  const [c, ctx] = canvas(256, 256);
+  ctx.fillStyle = '#c9b89a'; ctx.fillRect(0, 0, 256, 256);
+  noise(ctx, 256, 256, 12);
+  ctx.strokeStyle = 'rgba(120,95,60,0.5)'; ctx.lineWidth = 4;
+  ctx.strokeRect(16, 16, 224, 224); ctx.strokeRect(40, 40, 176, 176);
+  for (let i = 0; i < 3; i++) wrapBlotch(ctx, 256, 256, rnd() * 256, rnd() * 256, 20 + rnd() * 30, 'rgba(110,80,40,A)', 0.3);
+  return c;
+}
+
+/* ---------------- Level 6 : 消灯 ---------------- */
+function darkWall() {
+  const [c, ctx] = canvas(256, 512);
+  concrete(ctx, 256, 512, '#2c2c2a', 22);
+  for (let i = 0; i < 6; i++) crack(ctx, rnd() * 256, rnd() * 512, 14 + rnd() * 20, 'rgba(0,0,0,0.6)');
+  // 手探りの跡(手形)
+  for (let i = 0; i < 3; i++) {
+    const x = 30 + rnd() * 190, y = 200 + rnd() * 120;
+    ctx.fillStyle = 'rgba(10,10,10,0.45)';
+    ctx.beginPath(); ctx.ellipse(x, y, 11, 14, 0, 0, 7); ctx.fill();
+    for (let f = 0; f < 5; f++) { ctx.beginPath(); ctx.ellipse(x - 12 + f * 6, y - 18 - (f === 2 ? 4 : 0), 2.5, 8, (f - 2) * 0.15, 0, 7); ctx.fill(); }
+  }
+  return c;
+}
+function darkFloor() { const [c, ctx] = canvas(256, 256); concrete(ctx, 256, 256, '#232322', 24); return c; }
+function darkCeiling() { const [c, ctx] = canvas(256, 256); concrete(ctx, 256, 256, '#1c1c1b', 16); return c; }
+
+/* ---------------- Level 7 : 浸水したタイル張り ---------------- */
+function tiles(ctx, w, h, size, base, grout) {
+  ctx.fillStyle = grout; ctx.fillRect(0, 0, w, h);
+  for (let y = 0; y < h; y += size) for (let x = 0; x < w; x += size) {
+    const v = (rnd() - 0.5) * 16;
+    ctx.fillStyle = base(v); ctx.fillRect(x + 2, y + 2, size - 4, size - 4);
+  }
+}
+function floodWall() {
+  const [c, ctx] = canvas(256, 512);
+  tiles(ctx, 256, 512, 32, (v) => `rgb(${150 + v | 0},${172 + v | 0},${168 + v | 0})`, '#4a5654');
+  noise(ctx, 256, 512, 16);
+  // 水位の跡と藻
+  const g = ctx.createLinearGradient(0, 512, 0, 300);
+  g.addColorStop(0, 'rgba(20,50,40,0.85)'); g.addColorStop(0.45, 'rgba(30,70,55,0.5)'); g.addColorStop(1, 'rgba(30,70,55,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 300, 256, 212);
+  ctx.fillStyle = 'rgba(30,40,30,0.55)'; ctx.fillRect(0, 380, 256, 4);
+  for (let i = 0; i < 10; i++) {
+    const x = rnd() * 256, gg = ctx.createLinearGradient(0, 0, 0, 380);
+    gg.addColorStop(0, 'rgba(60,40,20,0.35)'); gg.addColorStop(1, 'rgba(60,40,20,0)');
+    ctx.fillStyle = gg; ctx.fillRect(x, 0, 2 + rnd() * 5, 120 + rnd() * 260);
+  }
+  return c;
+}
+function floodFloor() {
+  const [c, ctx] = canvas(256, 256);
+  tiles(ctx, 256, 256, 32, (v) => `rgb(${60 + v | 0},${80 + v | 0},${78 + v | 0})`, '#1e2826');
+  noise(ctx, 256, 256, 20);
+  for (let i = 0; i < 5; i++) wrapBlotch(ctx, 256, 256, rnd() * 256, rnd() * 256, 20 + rnd() * 40, 'rgba(10,30,20,A)', 0.5);
+  return c;
+}
+function floodCeiling() {
+  const [c, ctx] = canvas(256, 256);
+  concrete(ctx, 256, 256, '#3c4442', 16);
+  for (let i = 0; i < 5; i++) wrapBlotch(ctx, 256, 256, rnd() * 256, rnd() * 256, 20 + rnd() * 40, 'rgba(40,60,50,A)', 0.4);
+  return c;
+}
+
+/* ---------------- Level 8 : 洞窟 ---------------- */
+function rock(ctx, w, h, base) {
+  ctx.fillStyle = base; ctx.fillRect(0, 0, w, h);
+  for (let i = 0; i < 60; i++) wrapBlotch(ctx, w, h, rnd() * w, rnd() * h, 10 + rnd() * 50, rnd() < 0.5 ? 'rgba(0,0,0,A)' : 'rgba(255,240,220,A)', 0.1 + rnd() * 0.12);
+  noise(ctx, w, h, 36);
+  for (let i = 0; i < 10; i++) crack(ctx, rnd() * w, rnd() * h, 10 + rnd() * 25, 'rgba(10,8,6,0.7)');
+}
+function caveWall() {
+  const [c, ctx] = canvas(256, 512);
+  rock(ctx, 256, 512, '#4a4036');
+  // 地層
+  for (let y = 40; y < 512; y += 50 + rnd() * 40) {
+    ctx.strokeStyle = 'rgba(20,14,10,0.35)'; ctx.lineWidth = 2 + rnd() * 4;
+    ctx.beginPath(); ctx.moveTo(0, y);
+    for (let x = 0; x <= 256; x += 32) ctx.lineTo(x, y + Math.sin(x * 0.05 + y) * 6);
+    ctx.stroke();
+  }
+  // 湿った光沢
+  for (let i = 0; i < 6; i++) {
+    const x = rnd() * 256, g = ctx.createLinearGradient(0, 0, 0, 512);
+    g.addColorStop(0, 'rgba(160,170,170,0.12)'); g.addColorStop(1, 'rgba(160,170,170,0)');
+    ctx.fillStyle = g; ctx.fillRect(x, 0, 3 + rnd() * 6, 300 + rnd() * 200);
+  }
+  return c;
+}
+function caveFloor() {
+  const [c, ctx] = canvas(256, 256);
+  rock(ctx, 256, 256, '#3a332c');
+  for (let i = 0; i < 260; i++) { ctx.fillStyle = `rgba(${90 + rnd() * 60 | 0},${80 + rnd() * 50 | 0},${70 + rnd() * 40 | 0},0.6)`; ctx.beginPath(); ctx.arc(rnd() * 256, rnd() * 256, 1 + rnd() * 3, 0, 7); ctx.fill(); }
+  return c;
+}
+function caveCeiling() { const [c, ctx] = canvas(256, 256); rock(ctx, 256, 256, '#2e2822'); return c; }
+
 /* ---------------- 共通 ---------------- */
 function doorTex(style) {
   const [c, ctx] = canvas(256, 512);
@@ -293,6 +428,14 @@ function doorTex(style) {
     ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 4;
     ctx.strokeRect(30, 30, 196, 200); ctx.strokeRect(30, 270, 196, 210);
     ctx.fillStyle = '#c9b56a'; ctx.beginPath(); ctx.arc(210, 270, 10, 0, 7); ctx.fill();
+  } else if (style === 'hotel') {
+    ctx.fillStyle = '#4a2c18'; ctx.fillRect(0, 0, 256, 512);
+    noise(ctx, 256, 512, 18);
+    for (let x = 0; x < 256; x += 3) { ctx.fillStyle = `rgba(20,10,5,${0.05 + rnd() * 0.1})`; ctx.fillRect(x, 0, 1, 512); }
+    ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.lineWidth = 5;
+    ctx.strokeRect(28, 28, 200, 190); ctx.strokeRect(28, 250, 200, 230);
+    ctx.fillStyle = '#c9a24a'; ctx.beginPath(); ctx.arc(212, 280, 10, 0, 7); ctx.fill();
+    ctx.fillStyle = '#8a6a2a'; ctx.fillRect(206, 292, 12, 20);
   } else if (style === 'elevator') {
     ctx.fillStyle = '#8b8e90'; ctx.fillRect(0, 0, 256, 512);
     noise(ctx, 256, 512, 16);
@@ -468,6 +611,53 @@ const DECALS = {
     ctx.fillStyle = 'rgba(120,120,160,0.25)'; ctx.beginPath(); ctx.ellipse(50, 50, 16, 6, 0.4, 0, 7); ctx.fill();
     return c;
   },
+  web: () => {
+    const [c, ctx] = canvas(256, 256);
+    ctx.strokeStyle = 'rgba(235,235,230,0.7)'; ctx.lineWidth = 1.4;
+    const cx = 128 + (rnd() - 0.5) * 30, cy = 128 + (rnd() - 0.5) * 30, spokes = 11;
+    const ang = [...Array(spokes)].map((_, i) => (i / spokes) * Math.PI * 2 + (rnd() - 0.5) * 0.3);
+    for (const a of ang) { ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(a) * 180, cy + Math.sin(a) * 180); ctx.stroke(); }
+    for (let r = 12; r < 130; r += 9 + rnd() * 5) {
+      ctx.beginPath();
+      ang.forEach((a, i) => { const rr = r * (0.9 + rnd() * 0.2); const x = cx + Math.cos(a) * rr, y = cy + Math.sin(a) * rr; if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); });
+      ctx.closePath(); ctx.stroke();
+    }
+    ctx.fillStyle = 'rgba(230,230,225,0.25)'; for (let i = 0; i < 6; i++) { ctx.beginPath(); ctx.arc(cx + (rnd() - 0.5) * 120, cy + (rnd() - 0.5) * 120, 3 + rnd() * 6, 0, 7); ctx.fill(); }
+    return c;
+  },
+  puddle: () => {
+    const [c, ctx] = canvas(128, 128);
+    const g = ctx.createRadialGradient(64, 64, 6, 64, 64, 62);
+    g.addColorStop(0, 'rgba(40,60,70,0.85)'); g.addColorStop(0.7, 'rgba(30,45,55,0.6)'); g.addColorStop(1, 'rgba(30,45,55,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(64, 64, 62, 44, rnd(), 0, 7); ctx.fill();
+    ctx.fillStyle = 'rgba(200,220,230,0.18)'; ctx.beginPath(); ctx.ellipse(48, 52, 18, 5, 0.3, 0, 7); ctx.fill();
+    return c;
+  },
+  seep: () => {
+    const [c, ctx] = canvas(128, 256);
+    for (let i = 0; i < 14; i++) {
+      const x = 10 + rnd() * 108, g = ctx.createLinearGradient(0, 0, 0, 256);
+      g.addColorStop(0, 'rgba(20,35,40,0)'); g.addColorStop(0.3, 'rgba(20,35,40,0.6)'); g.addColorStop(1, 'rgba(20,35,40,0.9)');
+      ctx.fillStyle = g; ctx.fillRect(x, 40 + rnd() * 80, 2 + rnd() * 5, 256);
+    }
+    return c;
+  },
+  rope: () => {
+    const [c, ctx] = canvas(64, 512);
+    ctx.fillStyle = '#8a7148'; ctx.fillRect(24, 0, 16, 512);
+    ctx.strokeStyle = 'rgba(40,28,14,0.8)'; ctx.lineWidth = 2;
+    for (let y = 0; y < 512; y += 10) { ctx.beginPath(); ctx.moveTo(24, y); ctx.lineTo(40, y + 8); ctx.stroke(); }
+    for (let y = 60; y < 512; y += 90) { ctx.fillStyle = '#6a5436'; ctx.beginPath(); ctx.ellipse(32, y, 13, 9, 0, 0, 7); ctx.fill(); }
+    return c;
+  },
+  bell: () => {
+    const [c, ctx] = canvas(128, 128);
+    ctx.fillStyle = '#3a2416'; ctx.fillRect(0, 88, 128, 40);
+    ctx.fillStyle = '#d8b050'; ctx.beginPath(); ctx.arc(64, 84, 34, Math.PI, 0); ctx.fill(); ctx.fillRect(28, 82, 72, 8);
+    ctx.fillStyle = '#f0d890'; ctx.beginPath(); ctx.arc(64, 46, 6, 0, 7); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.beginPath(); ctx.ellipse(50, 66, 6, 12, -0.4, 0, 7); ctx.fill();
+    return c;
+  },
   paper: () => {
     const [c, ctx] = canvas(64, 64);
     ctx.fillStyle = '#e8e0c0'; ctx.fillRect(4, 4, 56, 56);
@@ -504,6 +694,10 @@ export function getTextures(theme) {
   else if (theme === 'parking') t = { wall: parkingWall(), floor: parkingFloor(), ceil: parkingCeiling(), pillar: parkingPillar() };
   else if (theme === 'station') t = { wall: stationWall(), floor: stationFloor(), ceil: stationCeiling(), pillar: stationWall() };
   else if (theme === 'office') t = { wall: officeWall(), floor: officeFloor(), ceil: officeCeiling(), pillar: officeWall() };
+  else if (theme === 'hotel') t = { wall: hotelWall(), floor: hotelFloor(), ceil: hotelCeiling(), pillar: hotelWall() };
+  else if (theme === 'dark') t = { wall: darkWall(), floor: darkFloor(), ceil: darkCeiling(), pillar: darkWall() };
+  else if (theme === 'flooded') t = { wall: floodWall(), floor: floodFloor(), ceil: floodCeiling(), pillar: floodWall() };
+  else if (theme === 'cave') t = { wall: caveWall(), floor: caveFloor(), ceil: caveCeiling(), pillar: caveWall() };
   else t = { wall: pipesWall(), floor: pipesFloor(), ceil: pipesCeiling(), pillar: pipesWall() };
   const out = {};
   for (const k in t) out[k] = toTex(t[k]);
@@ -526,4 +720,14 @@ export function getCommon() {
   common.signLocked = (txt) => toTex(signTex(txt, '#ff3a2a'), { repeat: false });
   common.signOpen = (txt) => toTex(signTex(txt, '#3aff7a'), { repeat: false });
   return common;
+}
+
+// 客室番号のプレート
+export function plateTexture(text, { bg = '#2a1a0e', fg = '#d8b458', w = 256, h = 96 } = {}) {
+  const [c, ctx] = canvas(w, h);
+  ctx.fillStyle = fg; ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = bg; ctx.fillRect(6, 6, w - 12, h - 12);
+  ctx.fillStyle = fg; ctx.font = `bold ${h * 0.6 | 0}px serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(text, w / 2, h / 2 + 3);
+  return toTex(c, { repeat: false });
 }

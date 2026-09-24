@@ -75,7 +75,7 @@ export class Player {
     if (this.stepDist > stride) {
       this.stepDist = 0;
       const loud = this.running ? 1 : this.crouching ? 0.25 : 0.55;
-      g.audio.footstep(g.cfg.theme, loud);
+      g.audio.footstep(g.logic?.footTheme?.() || g.cfg.theme, loud);
       g.makeNoise(this.pos, this.running ? 15 : this.crouching ? 1.2 : 5);
     }
 
