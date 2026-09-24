@@ -213,3 +213,18 @@ h1 {
   .update-actions { margin-top: 6px; }
   .update-actions button { padding: 6px; }
 }
+
+/* ---------- v1.1.1 縦画面 ---------- */
+body.portrait #hud-top {
+  top: calc(max(12px, env(safe-area-inset-top)) + 92px);
+  width: calc(100% - 28px);
+}
+body.portrait #objective { font-size: 14px; }
+body.portrait #message { bottom: 30%; max-width: 90vw; font-size: 15px; }
+body.portrait #stick-zone { width: 50%; height: 100%; }
+body.portrait #look-zone { width: 50%; }
+body.portrait #stick-base { left: 28px; bottom: max(40px, env(safe-area-inset-bottom)); }
+body.portrait #touch-buttons { right: max(14px, env(safe-area-inset-right)); bottom: max(28px, env(safe-area-inset-bottom)); grid-template-columns: 62px 62px; gap: 10px; }
+body.portrait .tbtn { width: 62px; height: 62px; font-size: 12px; }
+body.portrait .tbtn.small { width: 54px; height: 54px; font-size: 10px; }
+body.portrait .tbtn.use { width: 100%; height: 44px; }

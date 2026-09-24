@@ -85,7 +85,7 @@ src/input.js                     キーボード・マウス・タッチ
 src/textures.js                  壁紙・扉・掲示物などの質感生成
 src/config.js / src/update.js    バージョンと更新チェック
 release-notes/                   バージョンごとの更新内容
-scripts/patch_android.py         Android 設定の上書き(全画面・横画面・アイコン・バージョン・署名)
+scripts/patch_android.py         Android 設定の上書き(全画面・画面回転・アイコン・バージョン・署名)
 scripts/make_icons.py            アイコン生成
 android-overrides/               Android 用の上書きファイル
 .github/workflows/build-apk.yml  APK ビルドと Release 作成
