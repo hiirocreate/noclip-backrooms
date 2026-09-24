@@ -104,7 +104,7 @@ export class Player {
     if (this.sanity <= 0) g.kill('sanity');
 
     // カメラ
-    const targetEye = this.crouching ? 0.95 : 1.62;
+    const targetEye = this.seated ? 1.12 : this.crouching ? 0.95 : 1.62;
     this.eyeCur += (targetEye - this.eyeCur) * Math.min(1, dt * 8);
     if (this.moving) this.bob += dt * (this.running ? 13 : this.crouching ? 6 : 8.5);
     const bobAmp = this.moving ? (this.running ? 0.06 : 0.03) : 0;

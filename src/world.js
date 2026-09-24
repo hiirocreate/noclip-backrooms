@@ -10,6 +10,12 @@ export const PROP_KINDS = {
   machine: { h: 2.3, inset: 0.12, tex: 'machine', opaque: true },
   cabinet: { h: 1.9, inset: 0.2, tex: 'machine', opaque: true },
   cooler: { h: 1.25, inset: 0.9, tex: 'cooler', opaque: false },
+  barn: { h: 2.8, inset: 0.08, tex: 'barn', opaque: true },
+  // Level 12 の白い家具(床に半分沈んでいるものは h を小さくして置く)
+  wtable: { h: 0.75, inset: 0.55, tex: 'wfurn', opaque: false },
+  wchair: { h: 0.9, inset: 1.05, tex: 'wfurn', opaque: false },
+  wsofa: { h: 0.8, inset: 0.35, tex: 'wfurn', opaque: false },
+  wshelf: { h: 2.0, inset: 0.4, tex: 'wfurn', opaque: true },
 };
 
 export class World {
@@ -32,6 +38,7 @@ export class World {
     this.bakedLamps = map.lamps.filter(l => l.state === 'on');
     this.flickerLamps = map.lamps.filter(l => l.state === 'flicker');
     this.dirty = true;
+    this.daylight = 1;
     this.buildLightGrid();
     this.buildGeometry();
     this.buildLamps();
@@ -52,6 +59,7 @@ export class World {
     if (t === WALL || t === PILLAR) return true;
     const i = ty * this.map.W + tx;
     if (this.dyn.has(i)) return true;
+    if (this.veil && this.veil[i]) return true; // 背の高い草など(通れるが見通せない)
     if (t === PROP) return !!this.map.props.get(i)?.opaque;
     return false;
   }
@@ -76,7 +84,8 @@ export class World {
   }
 
   /* ---------- 焼き込みライト ---------- */
-  lampPos(l) { return new THREE.Vector3((l.x + 0.5) * this.T, this.H - 0.05, (l.y + 0.5) * this.T); }
+  get lampY() { return this.def.lampY ?? this.H - 0.05; } // 街灯は天井より低い位置に付けられる
+  lampPos(l) { return new THREE.Vector3((l.x + 0.5) * this.T, this.lampY, (l.y + 0.5) * this.T); }
 
   // 戻り値: [回路0,回路1,回路2,回路3, 特殊R,G,B]
   lightAt3(x, y, z, nx, ny, nz) {
@@ -84,7 +93,7 @@ export class World {
     const baseR = this.def.lamp.radius, baseI = this.def.lamp.intensity;
     for (const l of this.bakedLamps) {
       const R = l.radius || baseR, I = l.intensity || baseI;
-      const lx = (l.x + 0.5) * this.T, lz = (l.y + 0.5) * this.T, ly = this.H - 0.05;
+      const lx = (l.x + 0.5) * this.T, lz = (l.y + 0.5) * this.T, ly = this.lampY;
       const dx = lx - x, dy = ly - y, dz = lz - z;
       const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
       if (d >= R) continue;
@@ -118,6 +127,7 @@ export class World {
     if (tx < 0 || ty < 0 || tx >= this.map.W || ty >= this.map.H) return 0;
     const o = (ty * this.map.W + tx) * 5, g = this.lightGrid, c = this.circuit;
     let v = g[o] * c.x + g[o + 1] * c.y + g[o + 2] * c.z + g[o + 3] * c.w + g[o + 4] * this.uniforms.specialScale.value;
+    v += (this.def.daylight || 0) * this.daylight; // 屋外の空の明るさ(階層側で 0〜1 に変えられる)
     for (const p of this.flickerPool || []) {
       if (!p.userData.active) continue;
       const d = Math.hypot(p.position.x - x, p.position.z - z);
@@ -169,7 +179,7 @@ export class World {
     for (let ty = 0; ty < H; ty++) for (let tx = 0; tx < W; tx++) {
       if (!walk(tx, ty)) continue;
       const x0 = tx * T, z0 = ty * T;
-      for (const [b, y, ny] of [[builders.floor, 0, 1], [builders.ceil, Hh, -1]]) {
+      for (const [b, y, ny] of this.def.sky ? [[builders.floor, 0, 1]] : [[builders.floor, 0, 1], [builders.ceil, Hh, -1]]) {
         const base = b.pos.length / 3;
         for (let j = 0; j <= S; j++) for (let i = 0; i <= S; i++) {
           const x = x0 + (i / S) * T, z = z0 + (j / S) * T;
@@ -273,6 +283,7 @@ export class World {
     let geo;
     if (theme === 'lobby' || theme === 'office') geo = new THREE.BoxGeometry(0.62, 0.04, 1.22);
     else if (theme === 'parking' || theme === 'station') geo = new THREE.BoxGeometry(0.16, 0.1, 1.7);
+    else if (this.def.lampPoles) geo = new THREE.BoxGeometry(0.34, 0.08, 0.6);
     else geo = new THREE.SphereGeometry(0.16, 10, 8);
     const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, fog: false });
     const lamps = this.map.lamps;
@@ -282,7 +293,7 @@ export class World {
     this.lampOff = new THREE.Color(0.08, 0.08, 0.07);
     lamps.forEach((l, i) => {
       const p = this.lampPos(l);
-      p.y = this.H - (theme === 'pipes' ? 0.25 : 0.02);
+      p.y = this.def.lampY != null ? this.def.lampY + 0.03 : this.H - (theme === 'pipes' ? 0.25 : 0.02);
       m.makeTranslation(p.x, p.y, p.z);
       this.lampMesh.setMatrixAt(i, m);
       this.lampMesh.setColorAt(i, this.lampOff);
@@ -291,6 +302,17 @@ export class World {
     this.lampMesh.count = lamps.length;
     this.lampMesh.instanceMatrix.needsUpdate = true;
     this.group.add(this.lampMesh);
+    // 屋外の街灯：柱と当たり判定
+    if (this.def.lampPoles && lamps.length) {
+      const pole = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.07, 0.1, this.lampY, 6), new THREE.MeshLambertMaterial({ color: 0x2a2c2e, emissive: 0x08090a }), lamps.length);
+      lamps.forEach((l, i) => {
+        const p = this.lampPos(l);
+        m.makeTranslation(p.x, this.lampY / 2, p.z); pole.setMatrixAt(i, m);
+        this.colliders.push({ x: p.x, z: p.z, r: 0.14 });
+      });
+      pole.instanceMatrix.needsUpdate = true;
+      this.group.add(pole);
+    }
     this.flickerPool = [];
     for (let i = 0; i < 2; i++) {
       const pl = new THREE.PointLight(this.lampColor, 0, this.def.lamp.radius * 1.1, 1.6);
@@ -348,7 +370,7 @@ export class World {
     return mesh;
   }
 
-  addDoor(face, { style = 'metal', w = 1.3, h = Math.min(2.3, this.H - 0.3), sign = null } = {}) {
+  addDoor(face, { style = 'metal', w = 1.3, h = Math.min(2.3, this.H - 0.3), sign = null, frame = null } = {}) {
     const p = this.facePos(face, 0.03);
     const normal = new THREE.Vector3(-face.dx, 0, -face.dy);
     const g = new THREE.Group();
@@ -356,7 +378,7 @@ export class World {
     const door = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
     door.position.y = h / 2;
     g.add(door);
-    const frameMat = new THREE.MeshLambertMaterial({ color: 0x2a261e, emissive: 0x0a0906 });
+    const frameMat = frame != null ? new THREE.MeshLambertMaterial({ color: frame, emissive: new THREE.Color(frame).multiplyScalar(0.35) }) : new THREE.MeshLambertMaterial({ color: 0x2a261e, emissive: 0x0a0906 });
     for (const [fw, fh, x, y] of [[0.12, h + 0.12, -w / 2 - 0.06, h / 2], [0.12, h + 0.12, w / 2 + 0.06, h / 2], [w + 0.24, 0.12, 0, h + 0.06]]) {
       const f = new THREE.Mesh(new THREE.BoxGeometry(fw, fh, 0.1), frameMat);
       f.position.set(x, y, 0.03); g.add(f);

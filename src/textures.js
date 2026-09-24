@@ -419,6 +419,136 @@ function caveFloor() {
 }
 function caveCeiling() { const [c, ctx] = canvas(256, 256); rock(ctx, 256, 256, '#2e2822'); return c; }
 
+/* ---------------- Level 9 : 郊外(真夜中の住宅街) ---------------- */
+function suburbWall() {
+  const [c, ctx] = canvas(256, 512);
+  // 下見板張りの外壁
+  ctx.fillStyle = '#3c434a'; ctx.fillRect(0, 0, 256, 512);
+  for (let y = 0; y < 512; y += 16) {
+    ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(0, y + 13, 256, 3);
+    ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fillRect(0, y, 256, 2);
+  }
+  noise(ctx, 256, 512, 14);
+  // 窓(1階・2階)。どの家にも電気は来ていない
+  for (const [y, h] of [[70, 110], [300, 120]]) {
+    ctx.fillStyle = '#e6e2d6'; ctx.fillRect(66, y - 8, 124, h + 16);
+    ctx.fillStyle = '#07090c'; ctx.fillRect(74, y, 108, h);
+    ctx.fillStyle = 'rgba(120,140,160,0.10)'; ctx.fillRect(80, y + 6, 30, h - 12);
+    ctx.fillStyle = '#e6e2d6'; ctx.fillRect(126, y, 4, h); ctx.fillRect(74, y + h / 2 - 2, 108, 4);
+    ctx.fillStyle = '#23292e'; ctx.fillRect(60, y + h + 8, 136, 8);
+  }
+  // 雨どいと土台
+  ctx.fillStyle = '#1c2024'; ctx.fillRect(0, 0, 256, 10); ctx.fillRect(246, 0, 6, 512);
+  ctx.fillStyle = '#4a4640'; ctx.fillRect(0, 470, 256, 42);
+  noise(ctx, 256, 512, 8);
+  for (let i = 0; i < 6; i++) {
+    const x = rnd() * 256, g = ctx.createLinearGradient(0, 0, 0, 512);
+    g.addColorStop(0, 'rgba(10,12,14,0.5)'); g.addColorStop(1, 'rgba(10,12,14,0)');
+    ctx.fillStyle = g; ctx.fillRect(x, 10, 2 + rnd() * 4, 150 + rnd() * 250);
+  }
+  return c;
+}
+function suburbFloor() {
+  const [c, ctx] = canvas(256, 256);
+  // 雨に濡れたアスファルトと落ち葉
+  ctx.fillStyle = '#23252a'; ctx.fillRect(0, 0, 256, 256);
+  noise(ctx, 256, 256, 34);
+  for (let i = 0; i < 700; i++) { ctx.fillStyle = `rgba(${140 + rnd() * 60 | 0},${140 + rnd() * 60 | 0},${150 + rnd() * 60 | 0},0.18)`; ctx.fillRect(rnd() * 256, rnd() * 256, 1, 1); }
+  for (let i = 0; i < 6; i++) wrapBlotch(ctx, 256, 256, rnd() * 256, rnd() * 256, 20 + rnd() * 40, 'rgba(120,140,160,A)', 0.12);
+  for (let i = 0; i < 40; i++) {
+    const x = rnd() * 256, y = rnd() * 256, a = rnd() * 6.3;
+    ctx.fillStyle = ['rgba(120,60,20,0.8)', 'rgba(90,70,25,0.8)', 'rgba(60,40,20,0.8)'][i % 3];
+    ctx.save(); ctx.translate(x, y); ctx.rotate(a); ctx.beginPath(); ctx.ellipse(0, 0, 5 + rnd() * 4, 2.5 + rnd() * 2, 0, 0, 7); ctx.fill(); ctx.restore();
+  }
+  return c;
+}
+function barkWall() {
+  const [c, ctx] = canvas(256, 512);
+  ctx.fillStyle = '#2e2620'; ctx.fillRect(0, 0, 256, 512);
+  for (let i = 0; i < 90; i++) {
+    const x = rnd() * 256; ctx.strokeStyle = `rgba(${rnd() < 0.5 ? '10,8,6' : '80,70,60'},0.5)`; ctx.lineWidth = 1 + rnd() * 3;
+    ctx.beginPath(); ctx.moveTo(x, 0); for (let y = 0; y <= 512; y += 32) ctx.lineTo(x + Math.sin(y * 0.03 + i) * 4, y); ctx.stroke();
+  }
+  noise(ctx, 256, 512, 20);
+  return c;
+}
+
+/* ---------------- Level 10 : 豊作(麦畑と木立) ---------------- */
+function hedgeWall() {
+  const [c, ctx] = canvas(256, 512);
+  ctx.fillStyle = '#1d2a17'; ctx.fillRect(0, 0, 256, 512);
+  for (let i = 0; i < 900; i++) {
+    const x = rnd() * 256, y = rnd() * 512;
+    const v = rnd();
+    ctx.fillStyle = `rgba(${40 + v * 50 | 0},${60 + v * 60 | 0},${30 + v * 30 | 0},${0.5 + rnd() * 0.4})`;
+    ctx.beginPath(); ctx.ellipse(x, y, 4 + rnd() * 6, 2 + rnd() * 4, rnd() * 3, 0, 7); ctx.fill();
+  }
+  // 幹
+  for (let i = 0; i < 3; i++) { const x = 30 + rnd() * 200; ctx.fillStyle = 'rgba(30,22,16,0.8)'; ctx.fillRect(x, 330 + rnd() * 60, 10 + rnd() * 8, 200); }
+  const g = ctx.createLinearGradient(0, 512, 0, 300);
+  g.addColorStop(0, 'rgba(5,8,4,0.8)'); g.addColorStop(1, 'rgba(5,8,4,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 300, 256, 212);
+  noise(ctx, 256, 512, 14);
+  return c;
+}
+function dirtFloor() {
+  const [c, ctx] = canvas(256, 256);
+  ctx.fillStyle = '#4a3b2a'; ctx.fillRect(0, 0, 256, 256);
+  noise(ctx, 256, 256, 40);
+  for (let i = 0; i < 8; i++) wrapBlotch(ctx, 256, 256, rnd() * 256, rnd() * 256, 20 + rnd() * 40, rnd() < 0.5 ? 'rgba(30,22,14,A)' : 'rgba(110,90,60,A)', 0.25);
+  for (let i = 0; i < 160; i++) { ctx.fillStyle = `rgba(${120 + rnd() * 60 | 0},${100 + rnd() * 50 | 0},${70 + rnd() * 40 | 0},0.6)`; ctx.fillRect(rnd() * 256, rnd() * 256, 1 + rnd() * 2, 1 + rnd() * 2); }
+  return c;
+}
+
+/* ---------------- Level 11 : 終わりのない都市 ---------------- */
+function cityWall() {
+  const [c, ctx] = canvas(256, 1024);
+  ctx.fillStyle = '#5d5e5c'; ctx.fillRect(0, 0, 256, 1024);
+  noise(ctx, 256, 1024, 14);
+  // 上の階の窓(ところどころ灯りがついている)
+  for (let y = 24; y < 780; y += 108) {
+    ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(0, y + 92, 256, 4);
+    for (let x = 18; x < 256; x += 118) {
+      const lit = rnd() < 0.3;
+      ctx.fillStyle = lit ? `rgb(${210 + rnd() * 40 | 0},${180 + rnd() * 30 | 0},${110 + rnd() * 30 | 0})` : '#14171b';
+      ctx.fillRect(x, y, 100, 76);
+      if (!lit) { ctx.fillStyle = 'rgba(140,160,180,0.12)'; ctx.fillRect(x + 6, y + 4, 26, 68); }
+      ctx.fillStyle = '#3a3b3a'; ctx.fillRect(x + 48, y, 4, 76);
+    }
+  }
+  // 1階：シャッターの降りた店
+  ctx.fillStyle = '#2c2e30'; ctx.fillRect(0, 800, 256, 224);
+  for (let y = 812; y < 1010; y += 8) { ctx.fillStyle = 'rgba(255,255,255,0.06)'; ctx.fillRect(10, y, 236, 2); }
+  ctx.fillStyle = '#1a1b1c'; ctx.fillRect(0, 780, 256, 24);
+  noise(ctx, 256, 1024, 8);
+  return c;
+}
+function cityFloor() {
+  const [c, ctx] = canvas(256, 256);
+  ctx.fillStyle = '#3a3b3d'; ctx.fillRect(0, 0, 256, 256);
+  noise(ctx, 256, 256, 22);
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 2;
+  for (let i = 0; i <= 256; i += 64) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 256); ctx.moveTo(0, i); ctx.lineTo(256, i); ctx.stroke(); }
+  for (let i = 0; i < 5; i++) wrapBlotch(ctx, 256, 256, rnd() * 256, rnd() * 256, 15 + rnd() * 30, 'rgba(10,10,10,A)', 0.3);
+  return c;
+}
+
+/* ---------------- Level 12 : マトリックス(白い虚空) ---------------- */
+function whiteWall() {
+  const [c, ctx] = canvas(256, 512);
+  ctx.fillStyle = '#f2f2ef'; ctx.fillRect(0, 0, 256, 512);
+  noise(ctx, 256, 512, 5);
+  ctx.fillStyle = 'rgba(0,0,0,0.05)'; ctx.fillRect(0, 0, 2, 512); ctx.fillRect(0, 500, 256, 12);
+  return c;
+}
+function whiteFloor() {
+  const [c, ctx] = canvas(256, 256);
+  ctx.fillStyle = '#ecece8'; ctx.fillRect(0, 0, 256, 256);
+  noise(ctx, 256, 256, 6);
+  ctx.fillStyle = 'rgba(0,0,0,0.035)'; ctx.fillRect(0, 0, 256, 2); ctx.fillRect(0, 0, 2, 256);
+  return c;
+}
+
 /* ---------------- 共通 ---------------- */
 function doorTex(style) {
   const [c, ctx] = canvas(256, 512);
@@ -447,6 +577,27 @@ function doorTex(style) {
     ctx.fillStyle = '#2a2e33'; ctx.fillRect(40, 250, 176, 14);
     ctx.fillStyle = '#c8c8c0'; ctx.fillRect(56, 60, 144, 90);
     ctx.fillStyle = '#1a6a3a'; ctx.font = 'bold 34px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('非常階段', 128, 118);
+  } else if (style === 'house') {
+    ctx.fillStyle = '#d8d4c8'; ctx.fillRect(0, 0, 256, 512);
+    noise(ctx, 256, 512, 10);
+    ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 5;
+    ctx.strokeRect(34, 190, 188, 130); ctx.strokeRect(34, 340, 188, 140);
+    ctx.fillStyle = '#0a0c0e'; ctx.fillRect(56, 36, 144, 130);
+    ctx.fillStyle = '#d8d4c8'; ctx.fillRect(124, 36, 8, 130);
+    ctx.fillStyle = '#b09a5a'; ctx.beginPath(); ctx.arc(208, 300, 10, 0, 7); ctx.fill();
+    for (let i = 0; i < 4; i++) wrapBlotch(ctx, 256, 512, rnd() * 256, 380 + rnd() * 130, 30, 'rgba(40,40,35,A)', 0.25);
+  } else if (style === 'white') {
+    ctx.fillStyle = '#f4f4f2'; ctx.fillRect(0, 0, 256, 512);
+    noise(ctx, 256, 512, 4);
+    ctx.strokeStyle = 'rgba(0,0,0,0.12)'; ctx.lineWidth = 4; ctx.strokeRect(14, 14, 228, 484);
+    ctx.fillStyle = '#b8b8b2'; ctx.beginPath(); ctx.arc(212, 270, 9, 0, 7); ctx.fill();
+  } else if (style === 'megbase') {
+    ctx.fillStyle = '#39424c'; ctx.fillRect(0, 0, 256, 512);
+    noise(ctx, 256, 512, 16);
+    ctx.strokeStyle = '#1c2228'; ctx.lineWidth = 10; ctx.strokeRect(10, 10, 236, 492);
+    ctx.fillStyle = '#2878c8'; ctx.font = 'bold 44px monospace'; ctx.textAlign = 'center'; ctx.fillText('M.E.G.', 128, 110);
+    ctx.font = 'bold 26px sans-serif'; ctx.fillText('BASE BETA', 128, 150);
+    ctx.fillStyle = '#9aa0a6'; ctx.fillRect(196, 260, 30, 12);
   } else if (style === 'metal') {
     ctx.fillStyle = '#55524c'; ctx.fillRect(0, 0, 256, 512);
     noise(ctx, 256, 512, 26, false);
@@ -509,8 +660,24 @@ function chalk(ctx, draw, color = 'rgba(235,235,225,0.85)') {
   for (let k = 0; k < 3; k++) { ctx.lineWidth = 7 - k * 2; ctx.globalAlpha = 0.35 + k * 0.25; ctx.translate((rnd() - 0.5) * 2, (rnd() - 0.5) * 2); draw(); }
   ctx.restore();
 }
+function roadSign(left) {
+  const [c, ctx] = canvas(256, 128);
+  ctx.fillStyle = '#e8e8e0'; ctx.fillRect(0, 0, 256, 128);
+  ctx.fillStyle = '#1e5a36'; ctx.fillRect(5, 5, 246, 118);
+  ctx.fillStyle = '#f2f2ea'; ctx.font = 'bold 34px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('郊外の外れ', left ? 148 : 108, 44);
+  ctx.font = 'bold 20px sans-serif'; ctx.fillText('OUTSKIRTS', left ? 148 : 108, 86);
+  ctx.beginPath();
+  if (left) { ctx.moveTo(14, 64); ctx.lineTo(50, 30); ctx.lineTo(50, 50); ctx.lineTo(62, 50); ctx.lineTo(62, 78); ctx.lineTo(50, 78); ctx.lineTo(50, 98); }
+  else { ctx.moveTo(242, 64); ctx.lineTo(206, 30); ctx.lineTo(206, 50); ctx.lineTo(194, 50); ctx.lineTo(194, 78); ctx.lineTo(206, 78); ctx.lineTo(206, 98); }
+  ctx.fill();
+  noise(ctx, 256, 128, 10);
+  return c;
+}
+
 const DECALS = {
   arrow: () => { const [c, ctx] = canvas(256, 128); chalk(ctx, () => { ctx.beginPath(); ctx.moveTo(20, 64); ctx.lineTo(220, 64); ctx.moveTo(170, 24); ctx.lineTo(225, 64); ctx.lineTo(170, 104); ctx.stroke(); }); return c; },
+  megArrow: () => { const [c, ctx] = canvas(256, 128); chalk(ctx, () => { ctx.beginPath(); ctx.moveTo(20, 64); ctx.lineTo(220, 64); ctx.moveTo(170, 24); ctx.lineTo(225, 64); ctx.lineTo(170, 104); ctx.stroke(); }, 'rgba(70,150,235,0.9)'); return c; },
   cross: () => {
     const [c, ctx] = canvas(256, 256);
     chalk(ctx, () => { ctx.beginPath(); ctx.moveTo(50, 40); ctx.lineTo(206, 180); ctx.moveTo(206, 40); ctx.lineTo(50, 180); ctx.stroke(); }, 'rgba(230,80,60,0.85)');
@@ -658,6 +825,106 @@ const DECALS = {
     ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.beginPath(); ctx.ellipse(50, 66, 6, 12, -0.4, 0, 7); ctx.fill();
     return c;
   },
+  roadsignR: () => roadSign(false),
+  roadsignL: () => roadSign(true),
+  watcher: () => {
+    // 窓の奥に立つ人影(近所の見張り)
+    const [c, ctx] = canvas(128, 128);
+    ctx.fillStyle = '#e6e2d6'; ctx.fillRect(0, 0, 128, 128);
+    ctx.fillStyle = '#05070a'; ctx.fillRect(8, 8, 112, 112);
+    ctx.fillStyle = 'rgba(70,74,82,0.9)';
+    ctx.beginPath(); ctx.ellipse(64, 46, 13, 16, 0, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(40, 120); ctx.quadraticCurveTo(44, 64, 64, 62); ctx.quadraticCurveTo(84, 64, 88, 120); ctx.fill();
+    ctx.fillStyle = '#e6e2d6'; ctx.fillRect(62, 8, 4, 112);
+    return c;
+  },
+  wheatview: () => {
+    // 壊れた柵の向こうに広がる麦畑
+    const [c, ctx] = canvas(256, 256);
+    const g = ctx.createLinearGradient(0, 0, 0, 256);
+    g.addColorStop(0, '#0b0e14'); g.addColorStop(0.45, '#1a1d22'); g.addColorStop(0.5, '#4a4230'); g.addColorStop(1, '#2a2418');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 900; i++) { const x = rnd() * 256, y = 120 + rnd() * 136; ctx.strokeStyle = `rgba(${150 + rnd() * 60 | 0},${130 + rnd() * 50 | 0},${70 + rnd() * 30 | 0},0.5)`; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + (rnd() - 0.5) * 4, y - 6 - rnd() * 10); ctx.stroke(); }
+    ctx.fillStyle = '#3a2e22';
+    for (const x of [10, 100, 190]) { ctx.fillRect(x, 150, 10, 106); }
+    ctx.save(); ctx.translate(20, 190); ctx.rotate(0.35); ctx.fillRect(0, 0, 90, 8); ctx.restore();
+    ctx.fillRect(110, 185, 90, 8);
+    return c;
+  },
+  tracks: () => {
+    // 轍(タイヤの跡)
+    const [c, ctx] = canvas(128, 128);
+    for (const x of [30, 90]) {
+      ctx.fillStyle = 'rgba(30,22,14,0.55)'; ctx.fillRect(x - 9, 0, 18, 128);
+      ctx.fillStyle = 'rgba(15,10,6,0.5)'; for (let y = 0; y < 128; y += 8) ctx.fillRect(x - 8, y, 16, 3);
+    }
+    return c;
+  },
+  soil: () => {
+    const [c, ctx] = canvas(128, 128);
+    const g = ctx.createRadialGradient(64, 64, 6, 64, 64, 62);
+    g.addColorStop(0, 'rgba(20,14,8,0.95)'); g.addColorStop(0.7, 'rgba(35,24,14,0.8)'); g.addColorStop(1, 'rgba(35,24,14,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(64, 64, 62, 54, 0.2, 0, 7); ctx.fill();
+    ctx.strokeStyle = 'rgba(150,90,80,0.55)'; ctx.lineWidth = 2;
+    for (let i = 0; i < 9; i++) { ctx.beginPath(); const x = 30 + rnd() * 68, y = 30 + rnd() * 68; ctx.moveTo(x, y); ctx.quadraticCurveTo(x + (rnd() - 0.5) * 20, y + (rnd() - 0.5) * 20, x + (rnd() - 0.5) * 24, y + (rnd() - 0.5) * 24); ctx.stroke(); }
+    return c;
+  },
+  cityview: () => {
+    // 木立の切れ目から見える、遠くの街の灯り
+    const [c, ctx] = canvas(256, 256);
+    const g = ctx.createLinearGradient(0, 0, 0, 256);
+    g.addColorStop(0, '#6f757a'); g.addColorStop(0.55, '#8d9092'); g.addColorStop(0.56, '#3a3c3e'); g.addColorStop(1, '#2a2b2c');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 256, 256);
+    for (let x = 0; x < 256; x += 14 + rnd() * 10) { const h = 30 + rnd() * 70; ctx.fillStyle = `rgba(60,64,70,${0.5 + rnd() * 0.3})`; ctx.fillRect(x, 142 - h, 12 + rnd() * 10, h); }
+    ctx.fillStyle = '#555'; ctx.beginPath(); ctx.moveTo(96, 256); ctx.lineTo(118, 144); ctx.lineTo(138, 144); ctx.lineTo(160, 256); ctx.fill();
+    ctx.fillStyle = '#ddd'; for (let y = 150; y < 256; y += 18) ctx.fillRect(126, y, 4, 8 + (y - 150) / 10);
+    // 木立の切れ目(縁は葉に覆われている)
+    for (let i = 0; i < 500; i++) {
+      const edge = rnd() < 0.5 ? (rnd() < 0.5 ? rnd() * 40 : 216 + rnd() * 40) : null;
+      const x = edge ?? rnd() * 256, y = edge === null ? rnd() * 50 : rnd() * 256;
+      const v = rnd();
+      ctx.fillStyle = `rgba(${40 + v * 50 | 0},${60 + v * 60 | 0},${30 + v * 30 | 0},0.85)`;
+      ctx.beginPath(); ctx.ellipse(x, y, 4 + rnd() * 6, 2 + rnd() * 4, rnd() * 3, 0, 7); ctx.fill();
+    }
+    return c;
+  },
+  shopWindow: () => {
+    // 1階のガラス窓(内側は暗い)
+    const [c, ctx] = canvas(256, 192);
+    ctx.fillStyle = '#9a9c98'; ctx.fillRect(0, 0, 256, 192);
+    ctx.fillStyle = '#0b0e12'; ctx.fillRect(10, 10, 236, 172);
+    const g = ctx.createLinearGradient(0, 0, 256, 192);
+    g.addColorStop(0, 'rgba(160,180,200,0.18)'); g.addColorStop(0.4, 'rgba(160,180,200,0.02)'); g.addColorStop(0.6, 'rgba(160,180,200,0.12)'); g.addColorStop(1, 'rgba(160,180,200,0)');
+    ctx.fillStyle = g; ctx.fillRect(10, 10, 236, 172);
+    ctx.fillStyle = '#9a9c98'; ctx.fillRect(124, 10, 8, 172);
+    return c;
+  },
+  barn: () => {
+    const [c, ctx] = canvas(256, 256);
+    ctx.fillStyle = '#6a2a1e'; ctx.fillRect(0, 0, 256, 256);
+    for (let x = 0; x < 256; x += 21) { ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(x, 0, 3, 256); ctx.fillStyle = `rgba(${120 + rnd() * 40 | 0},50,30,0.25)`; ctx.fillRect(x + 4, 0, 14, 256); }
+    noise(ctx, 256, 256, 26);
+    ctx.strokeStyle = '#d8d0c0'; ctx.lineWidth = 7; ctx.strokeRect(60, 70, 136, 186);
+    ctx.beginPath(); ctx.moveTo(60, 70); ctx.lineTo(196, 256); ctx.moveTo(196, 70); ctx.lineTo(60, 256); ctx.stroke();
+    ctx.fillStyle = '#2a1a12'; ctx.fillRect(0, 0, 256, 12);
+    return c;
+  },
+  wfurn: () => {
+    const [c, ctx] = canvas(128, 128);
+    ctx.fillStyle = '#e8e6e0'; ctx.fillRect(0, 0, 128, 128); noise(ctx, 128, 128, 6);
+    ctx.strokeStyle = 'rgba(0,0,0,0.10)'; ctx.lineWidth = 4; ctx.strokeRect(2, 2, 124, 124);
+    for (let i = 0; i < 3; i++) crack(ctx, rnd() * 128, rnd() * 128, 6 + rnd() * 8, 'rgba(90,90,85,0.35)');
+    return c;
+  },
+  doormat: () => {
+    // 鍵の開いている家の玄関マット
+    const [c, ctx] = canvas(256, 128);
+    ctx.fillStyle = '#5a3a22'; ctx.fillRect(8, 8, 240, 112);
+    for (let i = 0; i < 1400; i++) { ctx.fillStyle = rnd() < 0.5 ? 'rgba(30,18,10,0.4)' : 'rgba(140,100,60,0.3)'; ctx.fillRect(8 + rnd() * 240, 8 + rnd() * 112, 1, 2); }
+    ctx.strokeStyle = '#2e1d10'; ctx.lineWidth = 6; ctx.strokeRect(14, 14, 228, 100);
+    ctx.fillStyle = 'rgba(225,205,160,0.85)'; ctx.font = 'bold 40px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('WELCOME', 128, 66);
+    return c;
+  },
   paper: () => {
     const [c, ctx] = canvas(64, 64);
     ctx.fillStyle = '#e8e0c0'; ctx.fillRect(4, 4, 56, 56);
@@ -698,6 +965,10 @@ export function getTextures(theme) {
   else if (theme === 'dark') t = { wall: darkWall(), floor: darkFloor(), ceil: darkCeiling(), pillar: darkWall() };
   else if (theme === 'flooded') t = { wall: floodWall(), floor: floodFloor(), ceil: floodCeiling(), pillar: floodWall() };
   else if (theme === 'cave') t = { wall: caveWall(), floor: caveFloor(), ceil: caveCeiling(), pillar: caveWall() };
+  else if (theme === 'suburb') t = { wall: suburbWall(), floor: suburbFloor(), ceil: darkCeiling(), pillar: barkWall() };
+  else if (theme === 'field') t = { wall: hedgeWall(), floor: dirtFloor(), ceil: darkCeiling(), pillar: hedgeWall() };
+  else if (theme === 'city') t = { wall: cityWall(), floor: cityFloor(), ceil: darkCeiling(), pillar: cityWall() };
+  else if (theme === 'white') t = { wall: whiteWall(), floor: whiteFloor(), ceil: whiteFloor(), pillar: whiteWall() };
   else t = { wall: pipesWall(), floor: pipesFloor(), ceil: pipesCeiling(), pillar: pipesWall() };
   const out = {};
   for (const k in t) out[k] = toTex(t[k]);

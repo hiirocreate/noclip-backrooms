@@ -35,6 +35,8 @@ const DEATH = {
   beast: ['見つかった', 'ボイラー室の主は、客を逃さない。'],
   leviathan: ['引きずり込まれた', '水の下の「それ」は、ずっとあなたの足音を聞いていた。'],
   spider: ['捕まった', '糸の震えが、すべてを知らせていた。'],
+  mangled: ['見つかった', '霧の中から現れたものは、もう人の形をしていなかった。'],
+  worms: ['引きずり込まれた', '土の下の群れは、振動のする方へ集まってくる。'],
 };
 
 // セーブデータ(v2)。旧版(階層番号)のセーブも引き継ぐ
@@ -298,7 +300,7 @@ class Game {
     this.scene.fog = new THREE.FogExp2(def.fog.color, def.fog.density);
     this.scene.background = new THREE.Color(def.fog.color);
     this.ambientLight.color.set(def.fog.color).lerp(new THREE.Color(0xffffff), 0.5);
-    this.ambientLight.intensity = def.theme === 'lobby' || def.theme === 'office' ? 0.25 : 0.15;
+    this.ambientLight.intensity = def.ambientLight ?? (def.theme === 'lobby' || def.theme === 'office' ? 0.25 : 0.15);
 
     const st = this.world.tileCenter(map.start.x, map.start.y);
     let yaw = 0;
@@ -306,7 +308,7 @@ class Game {
       if (!this.world.solid(map.start.x + dx, map.start.y + dy)) { yaw = a; break; }
     }
     this.player.spawn(st.x, st.z, yaw);
-    this.player.speedMul = 1;
+    this.player.speedMul = 1; this.player.seated = false;
     if (resume) {
       this.player.sanity = resume.sanity;
       this.player.stamina = resume.stamina;
@@ -596,6 +598,7 @@ class Game {
     // 恐怖度
     let fear = 0;
     for (const e of this.entities) {
+      if (e.harmless) continue;
       const d = e.distToPlayer();
       if (d > 16) continue;
       const active = this.chasers.has(e);

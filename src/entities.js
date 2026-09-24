@@ -523,6 +523,85 @@ export class Spider extends Entity {
   }
 }
 
+/* ============ 潰れたもの : 霧の中から現れる、人の形を失った何か(Level 9) ============ */
+export class Mangled extends Wanderer {
+  constructor(game, pos) {
+    super(game, pos);
+    this.type = 'mangled';
+    this.voice?.stop(); this.voice = game.audio.entityVoice('mangled');
+    this.walkSpeed = 1.1; this.chaseSpeed = game.cfg.chaseSpeed || 3.7;
+    const mat = new THREE.MeshLambertMaterial({ color: 0x2a1c1a, emissive: 0x0c0605 });
+    this.mesh.traverse(o => { if (o.isMesh) o.material = mat; });
+    // ねじれて潰れた体
+    this.torso.rotation.x = 0.5; this.torso.scale.set(1.5, 0.75, 1.2);
+    this.head.position.set(0.18, 1.95, 0.25); this.head.scale.set(1.3, 0.8, 1.1);
+    this.armL.rotation.z = -0.6; this.armR.scale.set(1, 1.3, 1);
+    this.eyes.material.color.set(0xd8e0ff); this.eyes.position.set(0.18, 1.98, 0.4);
+    this.alpha = 0; this.fading = false;
+    this.mesh.traverse(o => { if (o.isMesh) { o.material.transparent = true; o.material.opacity = 0; } });
+  }
+  // 霧の中にしか姿を保てない
+  update(dt, t) {
+    super.update(dt, t);
+    const want = this.fading ? 0 : 1;
+    this.alpha += (want - this.alpha) * Math.min(1, dt * 1.5);
+    this.mesh.traverse(o => { if (o.isMesh) o.material.opacity = this.alpha; });
+    this.eyes.material.opacity *= this.alpha;
+    if (this.fading && this.alpha < 0.03) this.gone = true;
+    // 首だけが別の生き物のように揺れる
+    this.head.rotation.x = Math.sin(t * 7 + this.pos.x) * 0.3;
+  }
+}
+
+/* ============ 顔のない住人 : 都市を歩いているだけ。目が合うと、顔のない顔でこちらを見る(Level 11) ============ */
+export class Faceling extends Wanderer {
+  constructor(game, pos) {
+    super(game, pos);
+    this.type = 'faceling';
+    this.harmless = true;
+    this.voice?.stop(); this.voice = game.audio.entityVoice('faceling');
+    this.walkSpeed = 1.05;
+    const mat = new THREE.MeshLambertMaterial({ color: 0x8a847a, emissive: 0x201e1b });
+    this.mesh.traverse(o => { if (o.isMesh) o.material = mat; });
+    this.eyes.visible = false;
+    this.mesh.scale.setScalar(0.66);
+    this.head.scale.set(1, 1.25, 1);
+  }
+  canSee() { return false; }
+  hear() {}
+  update(dt, t) {
+    this.stateTime += dt;
+    const g = this.game, p = g.player;
+    const d = this.distToPlayer();
+    let speed = 0;
+    // 近くで物音を立てると、立ち止まってこちらを向く
+    if (this.state !== 'stare' && d < (p.running ? 7 : 2.6) && g.world.los(this.pos.x, this.pos.z, p.pos.x, p.pos.z)) this.setState('stare');
+    switch (this.state) {
+      case 'stare': {
+        const want = Math.atan2(p.pos.x - this.pos.x, p.pos.z - this.pos.z);
+        let diff = want - this.heading; while (diff > Math.PI) diff -= Math.PI * 2; while (diff < -Math.PI) diff += Math.PI * 2;
+        this.heading += diff * Math.min(1, dt * 3);
+        if (this.stateTime > 3 && d > 3.5) { this.setState('wander'); this.randomTarget(); }
+        break;
+      }
+      case 'pause':
+        if (this.stateTime > 2 + Math.random() * 2) { this.setState('wander'); this.randomTarget(); }
+        break;
+      default:
+        speed = this.walkSpeed;
+        if (!this.field || this.followField(this.field, this.target, speed, dt) || this.stateTime > 30) this.setState('pause');
+    }
+    this.staring = this.state === 'stare';
+    const m = this.mesh; m.position.set(this.pos.x, 0, this.pos.z); m.rotation.y = this.heading;
+    const cyc = t * 4.5, sw = Math.min(1, speed / 2);
+    this.legL.rotation.x = Math.sin(cyc) * 0.5 * sw; this.legR.rotation.x = -Math.sin(cyc) * 0.5 * sw;
+    this.armL.rotation.x = -Math.sin(cyc) * 0.3 * sw; this.armR.rotation.x = Math.sin(cyc) * 0.3 * sw;
+    this.head.rotation.z = this.staring ? Math.sin(t * 1.3) * 0.15 : 0;
+    this.footsteps(dt, speed, 1.2);
+    this.voice?.set(tmp.set(this.pos.x, 1.6, this.pos.z), d < 12 ? (this.staring ? 0.5 : 0.15) : 0);
+  }
+}
+
 export function spawnEntity(game, type, avoidDist = 14) {
   const w = game.world;
   const field = game.playerField;
@@ -540,6 +619,8 @@ export function spawnEntity(game, type, avoidDist = 14) {
   if (type === 'duller') return new Duller(game, pos);
   if (type === 'beast') return new Beast(game, pos);
   if (type === 'spider') return new Spider(game, pos);
+  if (type === 'mangled') return new Mangled(game, pos);
+  if (type === 'faceling') return new Faceling(game, pos);
   return new Hound(game, pos);
 }
 
