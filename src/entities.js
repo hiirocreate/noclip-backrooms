@@ -1,6 +1,7 @@
 // 「何か」たち：徘徊者 / 笑顔 / 猟犬
 import * as THREE from 'three';
 import { FLOOR } from './mapgen.js';
+import { BODY, buildHumanoid, addMouth, buildHound, buildSpider, skinMaterial } from './entitymodels.js';
 
 const DIR8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
 const tmp = new THREE.Vector3();
@@ -85,42 +86,35 @@ class Entity {
   }
 
   setState(s) { this.state = s; this.stateTime = 0; }
-  dispose() { this.game.scene.remove(this.mesh); this.voice?.stop(); }
+  dispose() {
+    this.game.scene.remove(this.mesh); this.voice?.stop();
+    // 形状は同じ種類で使い回すので、マテリアルだけ解放する
+    const seen = new Set();
+    this.mesh?.traverse?.(o => { if (o.material && !seen.has(o.material)) { seen.add(o.material); o.material.dispose(); } });
+  }
 }
 
 /* ============ 徘徊者 : 背の高い黒い人影 ============ */
 export class Wanderer extends Entity {
-  constructor(game, pos) {
+  constructor(game, pos, { body = BODY.tall, mats = null } = {}) {
     super(game, 'wanderer', pos);
     const lv = game.cfg;
     this.walkSpeed = 1.3; this.chaseSpeed = lv.chaseSpeed || 3.8;
     const h = Math.min(lv.height - 0.15, 2.7);
     const s = h / 2.7;
-    const mat = new THREE.MeshBasicMaterial({ color: 0x050403 });
-    const g = new THREE.Group();
-    const part = (geo, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); g.add(m); return m; };
-    this.torso = part(new THREE.CylinderGeometry(0.2, 0.09, 1.1, 7), 0, 1.65, 0);
-    this.head = part(new THREE.SphereGeometry(0.15, 8, 8), 0, 2.36, 0.03);
-    this.head.scale.set(0.9, 1.4, 1);
-    part(new THREE.CylinderGeometry(0.05, 0.04, 0.2, 5), 0, 2.2, 0);
-    this.armL = new THREE.Group(); this.armR = new THREE.Group();
-    for (const [arm, x] of [[this.armL, -0.24], [this.armR, 0.24]]) {
-      arm.position.set(x, 2.12, 0);
-      const a = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.025, 1.5, 5), mat); a.position.y = -0.75; arm.add(a);
-      // 長い指
-      for (let i = 0; i < 3; i++) { const f = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.004, 0.28, 3), mat); f.position.set((i - 1) * 0.025, -1.6, 0); arm.add(f); }
-      g.add(arm);
-    }
-    this.legL = new THREE.Group(); this.legR = new THREE.Group();
-    for (const [leg, x] of [[this.legL, -0.08], [this.legR, 0.08]]) {
-      leg.position.set(x, 1.12, 0);
-      const l = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.03, 1.12, 5), mat); l.position.y = -0.56; leg.add(l);
-      g.add(leg);
-    }
-    // かすかに光る目
+    // 痩せこけた長身の人影(黒ずんだ皮膚。輪郭だけがかすかに光る)
+    this.mats = mats || { skin: skinMaterial(0x6a5c52, { rim: 0x2c2723 }) };
+    const rig = this.rig = buildHumanoid(body, this.mats);
+    this.bodyType = body;
+    this.baseLean = body.hunch || 0.14;
+    this.torso = rig.chest; this.head = rig.head;
+    this.armL = rig.armL.shoulder; this.armR = rig.armR.shoulder;
+    this.legL = rig.legL.hip; this.legR = rig.legR.hip;
+    // 眼窩の奥でかすかに光る目
     const eyes = new THREE.Sprite(new THREE.SpriteMaterial({ map: game.world.common.eyes, color: 0xffeecc, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, transparent: true, opacity: 0.55 }));
-    eyes.scale.set(0.34, 0.17, 1); eyes.position.set(0, 2.4, 0.14);
-    g.add(eyes); this.eyes = eyes;
+    eyes.scale.set(body.headR * 2.4, body.headR * 1.2, 1); eyes.position.set(0, body.headR * 0.12, body.headR * 0.93);
+    rig.head.add(eyes); this.eyes = eyes;
+    const g = rig.group;
     g.scale.setScalar(s);
     this.mesh = g;
     game.scene.add(g);
@@ -141,6 +135,12 @@ export class Wanderer extends Entity {
       if (diff > 1.25) return false;
     }
     return g.world.los(this.pos.x, this.pos.z, p.pos.x, p.pos.z);
+  }
+
+  animate(dt, t, speed, reach) {
+    animateHumanoid(this, dt, t, speed, reach);
+    this.eyes.material.opacity = reach ? 0.95 : 0.4;
+    this.pose?.(t);
   }
 
   hear(pos, radius) {
@@ -187,21 +187,46 @@ export class Wanderer extends Entity {
 
     // アニメーション
     const m = this.mesh; m.position.set(this.pos.x, 0, this.pos.z); m.rotation.y = this.heading;
-    const cyc = t * (speed > 3 ? 9 : 4.5);
-    const sw = Math.min(1, speed / 2);
-    this.legL.rotation.x = Math.sin(cyc) * 0.5 * sw; this.legR.rotation.x = -Math.sin(cyc) * 0.5 * sw;
-    this.armL.rotation.x = -Math.sin(cyc) * 0.35 * sw + (this.state === 'chase' ? -0.6 : 0);
-    this.armR.rotation.x = Math.sin(cyc) * 0.35 * sw + (this.state === 'chase' ? -0.6 : 0);
-    this.armL.rotation.z = -0.05; this.armR.rotation.z = 0.05;
-    this.torso.rotation.z = Math.sin(t * 1.3) * 0.05;
-    // 首が不自然にかくつく
-    if (Math.random() < dt * 2) this.headTwitch = (Math.random() - 0.5) * 1.2;
-    this.head.rotation.z += ((this.headTwitch || 0) - this.head.rotation.z) * Math.min(1, dt * 20);
-    this.eyes.material.opacity = this.state === 'chase' ? 0.95 : 0.4;
+    this.animate(dt, t, speed, this.state === 'chase');
     this.footsteps(dt, speed, 1.4);
     const d = this.distToPlayer();
     this.voice?.set(tmp.set(this.pos.x, 2, this.pos.z), d < 30 ? (this.state === 'chase' ? 0.9 : 0.35) : 0);
   }
+}
+
+/* ---- 人型の動き(徘徊者・ダラー・主・潰れたもの・住人で共通) ---- */
+function animateHumanoid(e, dt, t, speed, reach) {
+  const r = e.rig;
+  const cyc = t * (speed > 3 ? 9 : 4.5) + e.pos.x;
+  const sw = Math.min(1, speed / 2);
+  const s1 = Math.sin(cyc);
+  // 脚：股関節と膝(後ろへ曲がる)
+  r.legL.hip.rotation.x = s1 * 0.5 * sw; r.legR.hip.rotation.x = -s1 * 0.5 * sw;
+  r.legL.knee.rotation.x = Math.max(0, Math.sin(cyc - 1.2)) * 0.9 * sw + 0.05;
+  r.legR.knee.rotation.x = Math.max(0, Math.sin(cyc + Math.PI - 1.2)) * 0.9 * sw + 0.05;
+  r.legL.ankle.rotation.x = -r.legL.knee.rotation.x * 0.4; r.legR.ankle.rotation.x = -r.legR.knee.rotation.x * 0.4;
+  // 上半身：前かがみ・揺れ・呼吸
+  r.body.position.y = e.bodyType.hipY + Math.abs(Math.cos(cyc)) * 0.03 * sw;
+  r.body.rotation.z = Math.sin(t * 1.3) * 0.04;
+  r.spine.rotation.x = e.baseLean + (reach ? 0.18 : 0) + Math.sin(t * 1.7) * 0.015;
+  r.chest.scale.set(1 + Math.sin(t * 1.7) * 0.012, 1, 1 + Math.sin(t * 1.7) * 0.02);
+  r.neck.rotation.x = 0.2 + (reach ? -0.25 : 0);
+  // 腕：だらりと下げて振る / 追うときは前へ伸ばす
+  for (const [arm, sd] of [[r.armL, -1], [r.armR, 1]]) {
+    const ph = sd < 0 ? s1 : -s1;
+    arm.shoulder.rotation.x = -ph * 0.35 * sw + (reach ? -1.15 + Math.sin(t * 6 + sd) * 0.08 : 0);
+    arm.shoulder.rotation.z = sd * (reach ? 0.12 : 0.07);
+    arm.elbow.rotation.x = reach ? -0.25 : -0.12 - Math.max(0, ph) * 0.3 * sw;
+    arm.wrist.rotation.x = reach ? 0.2 : 0.1;
+    // 長い指がゆっくり動く
+    arm.fingers.forEach((f, i) => {
+      const curl = reach ? 0.15 + Math.sin(t * 5 + i) * 0.25 : 0.25 + Math.sin(t * 1.1 + i * 0.7 + sd) * 0.15;
+      f.k.rotation.x = -curl; f.k2.rotation.x = -curl * 1.3;
+    });
+  }
+  // 首が不自然にかくつく
+  if (Math.random() < dt * 2) e.headTwitch = (Math.random() - 0.5) * 1.2;
+  r.head.rotation.z += ((e.headTwitch || 0) - r.head.rotation.z) * Math.min(1, dt * 20);
 }
 
 /* ============ 笑顔 : 暗がりに浮かぶ顔 ============ */
@@ -296,36 +321,10 @@ export class Smiler extends Entity {
 export class Hound extends Entity {
   constructor(game, pos) {
     super(game, 'hound', pos);
-    const mat = new THREE.MeshLambertMaterial({ color: 0x1a0f0c, emissive: 0x0a0302 });
-    const g = new THREE.Group();
-    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.28, 1.2, 7), mat);
-    body.rotation.x = Math.PI / 2; body.position.y = 0.72; g.add(body);
-    // 肋骨
-    for (let i = 0; i < 5; i++) {
-      const r = new THREE.Mesh(new THREE.TorusGeometry(0.27, 0.025, 4, 10, Math.PI), mat);
-      r.position.set(0, 0.72, -0.3 + i * 0.13); r.rotation.z = Math.PI; g.add(r);
-    }
-    this.headG = new THREE.Group(); this.headG.position.set(0, 0.85, 0.72);
-    const skull = new THREE.Mesh(new THREE.ConeGeometry(0.17, 0.5, 6), mat); skull.rotation.x = Math.PI / 2; skull.position.z = 0.15; this.headG.add(skull);
-    this.jaw = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.42, 5), mat);
-    this.jaw.rotation.x = Math.PI / 2; this.jaw.position.set(0, -0.1, 0.13); this.headG.add(this.jaw);
-    // 牙
-    const toothMat = new THREE.MeshBasicMaterial({ color: 0xcfc4a8 });
-    for (let i = 0; i < 7; i++) {
-      const a = (i / 6 - 0.5) * 1.6;
-      const up = new THREE.Mesh(new THREE.ConeGeometry(0.014, 0.09, 4), toothMat);
-      up.position.set(Math.sin(a) * 0.1, -0.05, 0.12 + Math.cos(a) * 0.12); up.rotation.x = Math.PI; this.headG.add(up);
-      const lo = new THREE.Mesh(new THREE.ConeGeometry(0.012, 0.07, 4), toothMat);
-      lo.position.set(Math.sin(a) * 0.07, 0.05, 0.08 + Math.cos(a) * 0.1); this.jaw.add(lo);
-    }
-    g.add(this.headG);
-    this.legs = [];
-    for (const [x, z] of [[-0.18, 0.4], [0.18, 0.4], [-0.18, -0.4], [0.18, -0.4]]) {
-      const lg = new THREE.Group(); lg.position.set(x, 0.72, z);
-      const l = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.025, 0.78, 5), mat); l.position.y = -0.36; lg.add(l);
-      g.add(lg); this.legs.push(lg);
-    }
-    this.mesh = g; game.scene.add(g);
+    // あばらの浮いた、毛のない猟犬
+    const rig = this.rig = buildHound(skinMaterial(0x1d130f, { rim: 0x3a2419 }));
+    this.headG = rig.headG; this.jaw = rig.jaw; this.legs = rig.legs;
+    this.mesh = rig.group; game.scene.add(rig.group);
     this.walkSpeed = 1.6; this.huntSpeed = 5.4;
     this.randomTarget();
   }
@@ -369,10 +368,29 @@ export class Hound extends Entity {
     if (d < 0.95) g.kill('hound');
 
     const m = this.mesh; m.position.set(this.pos.x, 0, this.pos.z); m.rotation.y = this.heading;
-    const cyc = t * (speed > 3 ? 16 : 6);
-    this.legs.forEach((l, i) => { l.rotation.x = Math.sin(cyc + (i % 2 ? Math.PI : 0) + (i > 1 ? 0.8 : 0)) * 0.6 * Math.min(1, speed / 2); });
-    this.jaw.rotation.x = Math.PI / 2 + 0.25 + Math.sin(t * 9) * 0.15;
-    this.headG.rotation.y = this.state === 'sniff' ? Math.sin(t * 6) * 0.5 : 0;
+    const r = this.rig;
+    const cyc = t * (speed > 3 ? 14 : 6) + this.pos.z;
+    const sw = Math.min(1, speed / 2);
+    r.legs.forEach((l, i) => {
+      const ph = cyc + (i % 2 ? Math.PI : 0) + (l.hind ? 0.9 : 0);
+      const s1 = Math.sin(ph), lift = Math.max(0, Math.sin(ph + 1.2));
+      if (!l.hind) {
+        l.root.rotation.x = s1 * 0.55 * sw;
+        l.j1.rotation.x = lift * 0.9 * sw;
+        l.j2.rotation.x = -lift * 0.5 * sw;
+      } else {
+        l.root.rotation.x = -0.5 + s1 * 0.5 * sw;
+        l.j1.rotation.x = 1.2 + lift * 0.45 * sw;
+        l.j2.rotation.x = -0.7 - lift * 0.4 * sw;
+      }
+    });
+    r.bodyG.position.y = 0.74 + Math.sin(cyc * 2) * 0.025 * sw - (this.state === 'sniff' ? 0.06 : 0);
+    r.bodyG.rotation.x = Math.sin(cyc * 2 + 0.5) * 0.03 * sw;
+    r.bodyG.scale.y = 1 + Math.sin(t * (this.state === 'hunt' ? 9 : 2.2)) * 0.02; // 荒い呼吸
+    r.tail.rotation.z = Math.sin(t * 2.3) * 0.2;
+    this.jaw.rotation.x = 0.12 + Math.abs(Math.sin(t * (this.state === 'hunt' ? 11 : 3))) * (this.state === 'hunt' ? 0.4 : 0.12);
+    this.headG.rotation.y = this.state === 'sniff' ? Math.sin(t * 6) * 0.5 : Math.sin(t * 0.9) * 0.08;
+    r.neck.rotation.x = -2.0 + (this.state === 'sniff' ? 0.45 : this.state === 'hunt' ? 0.2 : 0);
     this.footsteps(dt, speed, 0.9);
     this.voice?.set(tmp.set(this.pos.x, 0.8, this.pos.z), d < 25 ? (this.state === 'hunt' ? 1 : 0.4) : 0);
   }
@@ -381,13 +399,19 @@ export class Hound extends Entity {
 /* ============ ダラー : 壁をすり抜ける灰色の人影 ============ */
 export class Duller extends Wanderer {
   constructor(game, pos) {
-    super(game, pos);
+    // なめらかで顔のない、半透明の灰色の人影
+    const skin = skinMaterial(0xa2a29c, { rim: 0x6a6a66, rimPow: 1.8, bump: 0.004, transparent: true, opacity: 0.5 });
+    skin.depthWrite = false;
+    super(game, pos, { body: BODY.smooth, mats: { skin } });
     this.type = 'duller';
     this.voice?.stop(); this.voice = game.audio.entityVoice('duller');
     this.walkSpeed = 0.8; this.chaseSpeed = 1.9;
-    const mat = new THREE.MeshBasicMaterial({ color: 0x9a9a94, transparent: true, opacity: 0.55, depthWrite: false });
-    this.mesh.traverse(o => { if (o.isMesh) o.material = mat; });
     this.eyes.visible = false;
+    this.baseLean = 0.04;
+  }
+  pose(t) {
+    // 輪郭がゆらぐ
+    this.mats.skin.opacity = 0.42 + Math.sin(t * 2.1 + this.pos.x) * 0.08;
   }
   randomTarget() {
     const T = this.world.T, W = this.world.map.W, H = this.world.map.H;
@@ -414,17 +438,19 @@ export class Duller extends Wanderer {
 /* ============ ボイラー室の主 : 大きく、ゆっくり歩き、見つけると追ってくる(Level 5) ============ */
 export class Beast extends Wanderer {
   constructor(game, pos, { home = null, range = 10 } = {}) {
-    super(game, pos);
+    // 肩の盛り上がった巨体。猫背で、裂けた口に歯が並ぶ
+    const mats = { skin: skinMaterial(0x3e2b22, { rim: 0x1e0c06, emissive: 0x030100 }) };
+    super(game, pos, { body: BODY.bulky, mats });
     this.type = 'beast';
     this.voice?.stop(); this.voice = game.audio.entityVoice('beast');
     this.walkSpeed = 0.95; this.chaseSpeed = 3.5;
     this.home = home ? home.clone() : pos.clone(); this.range = range;
-    const mat = new THREE.MeshLambertMaterial({ color: 0x1a0c08, emissive: 0x120604 });
-    this.mesh.traverse(o => { if (o.isMesh) o.material = mat; });
-    this.torso.scale.set(1.9, 1, 1.6);
-    this.head.scale.set(1.5, 1.2, 1.4);
+    addMouth(this.rig, BODY.bulky, mats, { teeth: 12, open: 0.35 });
     this.eyes.material.color.set(0xff6a3a);
     this.randomTarget();
+  }
+  pose(t) {
+    this.rig.jaw.rotation.x = 0.3 + Math.abs(Math.sin(t * (this.state === 'chase' ? 7 : 1.2))) * 0.25;
   }
   // 縄張り(ボイラー室の周り)から離れない
   randomTarget() {
@@ -444,29 +470,14 @@ export class Beast extends Wanderer {
 export class Spider extends Entity {
   constructor(game, pos) {
     super(game, 'spider', pos);
-    const mat = new THREE.MeshLambertMaterial({ color: 0x17120e, emissive: 0x060403 });
-    const g = new THREE.Group();
-    const abd = new THREE.Mesh(new THREE.SphereGeometry(0.42, 10, 8), mat); abd.scale.set(1, 0.8, 1.3); abd.position.set(0, 0.62, -0.45); g.add(abd);
-    const ceph = new THREE.Mesh(new THREE.SphereGeometry(0.26, 9, 7), mat); ceph.position.set(0, 0.55, 0.12); g.add(ceph);
-    // 赤く光る目
-    const eyeMat = new THREE.MeshBasicMaterial({ color: 0xff2a1a, fog: false });
-    this.eyeMat = eyeMat;
-    for (const [x, y] of [[-0.07, 0.66], [0.07, 0.66], [-0.12, 0.6], [0.12, 0.6], [-0.04, 0.72], [0.04, 0.72]]) {
-      const e = new THREE.Mesh(new THREE.SphereGeometry(0.025, 5, 4), eyeMat); e.position.set(x, y, 0.36); g.add(e);
-    }
-    // 8本の脚(付け根・膝の2関節)
-    this.legs = [];
-    for (let i = 0; i < 8; i++) {
-      const side = i < 4 ? -1 : 1, k = i % 4;
-      const root = new THREE.Group(); root.position.set(side * 0.18, 0.58, 0.28 - k * 0.14);
-      root.rotation.y = side * (0.9 - k * 0.45) + (side < 0 ? Math.PI : 0);
-      const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.025, 0.75, 5), mat);
-      upper.rotation.z = -Math.PI / 3.2; upper.position.set(0.3, 0.2, 0); root.add(upper);
-      const knee = new THREE.Group(); knee.position.set(0.62, 0.4, 0); root.add(knee);
-      const lower = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.008, 1.0, 5), mat);
-      lower.rotation.z = Math.PI / 5; lower.position.set(0.28, -0.45, 0); knee.add(lower);
-      g.add(root); this.legs.push({ root, knee, base: root.rotation.y });
-    }
+    const skin = skinMaterial(0x17110d, { rim: 0x33271c, kind: 'hair', bump: 0.03 });
+    const abd = skinMaterial(0x1c140f, { rim: 0x3a2c20, kind: 'hair', bump: 0.035 });
+    const eye = new THREE.MeshBasicMaterial({ color: 0xff2a1a, fog: false });
+    const fang = new THREE.MeshLambertMaterial({ color: 0x0a0806, emissive: 0x050302 });
+    const rig = this.rig = buildSpider({ skin, abd, leg: skin, eye, fang });
+    this.eyeMat = eye;
+    this.legs = rig.legs;
+    const g = rig.group;
     this.mesh = g; game.scene.add(g);
     this.home = pos.clone();
     this.state = 'wait';
@@ -510,13 +521,20 @@ export class Spider extends Entity {
     }
     if (d < 0.95) g.kill('spider');
     const m = this.mesh; m.position.set(this.pos.x, 0, this.pos.z); m.rotation.y = this.heading;
-    const cyc = t * (speed > 3 ? 22 : 8);
+    const cyc = t * (speed > 3 ? 20 : 8);
+    const amt = speed ? 0.32 : 0.03;
     this.legs.forEach((l, i) => {
-      const ph = cyc + (i % 2 ? Math.PI : 0) + (i >= 4 ? Math.PI / 2 : 0);
-      const amt = speed ? 0.35 : 0.04;
+      // 対角の脚が交互に動く
+      const ph = cyc + ((i % 4) % 2 ? Math.PI : 0) + (i >= 4 ? Math.PI : 0);
       l.root.rotation.y = l.base + Math.sin(ph) * amt;
-      l.knee.rotation.z = Math.max(0, Math.sin(ph + 1)) * amt * 0.8;
+      l.lift.rotation.z = l.side * (2.15 + Math.max(0, Math.sin(ph + 1.3)) * amt * 0.8);
+      l.knee.rotation.z = l.side * (-1.7 - Math.max(0, Math.sin(ph + 1.3)) * amt * 0.5);
     });
+    const r = this.rig;
+    r.bodyG.position.y = 0.6 + Math.sin(cyc * 2) * 0.02 * (speed ? 1 : 0.3);
+    r.abd.rotation.x = 0.18 + Math.sin(t * 1.4) * 0.04;
+    r.abd.scale.setScalar(1 + Math.sin(t * 1.4) * 0.015);
+    r.fangs.forEach((f, i) => { f.rotation.z = (i ? 1 : -1) * (this.state === 'wait' ? 0.05 : 0.25 + Math.sin(t * 14) * 0.15); });
     this.eyeMat.color.setRGB(1, this.state === 'wait' ? 0.25 : 0.1, 0.08);
     this.footsteps(dt, speed, 0.5);
     this.voice?.set(tmp.set(this.pos.x, 0.6, this.pos.z), d < 20 ? (this.state === 'wait' ? 0.25 : 1) : 0);
@@ -526,46 +544,55 @@ export class Spider extends Entity {
 /* ============ 潰れたもの : 霧の中から現れる、人の形を失った何か(Level 9) ============ */
 export class Mangled extends Wanderer {
   constructor(game, pos) {
-    super(game, pos);
+    const mats = { skin: skinMaterial(0x2c1d1a, { rim: 0x4a3530, transparent: true, opacity: 0 }) };
+    mats.bone = new THREE.MeshLambertMaterial({ color: 0xcfc2a4, emissive: 0x1a160e, transparent: true, opacity: 0 });
+    super(game, pos, { body: BODY.tall, mats });
     this.type = 'mangled';
     this.voice?.stop(); this.voice = game.audio.entityVoice('mangled');
     this.walkSpeed = 1.1; this.chaseSpeed = game.cfg.chaseSpeed || 3.7;
-    const mat = new THREE.MeshLambertMaterial({ color: 0x2a1c1a, emissive: 0x0c0605 });
-    this.mesh.traverse(o => { if (o.isMesh) o.material = mat; });
-    // ねじれて潰れた体
-    this.torso.rotation.x = 0.5; this.torso.scale.set(1.5, 0.75, 1.2);
-    this.head.position.set(0.18, 1.95, 0.25); this.head.scale.set(1.3, 0.8, 1.1);
-    this.armL.rotation.z = -0.6; this.armR.scale.set(1, 1.3, 1);
-    this.eyes.material.color.set(0xd8e0ff); this.eyes.position.set(0.18, 1.98, 0.4);
+    addMouth(this.rig, BODY.tall, mats, { teeth: 8, open: 0.7 });
+    this.eyes.material.color.set(0xd8e0ff);
+    this.baseLean = 0.55;
     this.alpha = 0; this.fading = false;
-    this.mesh.traverse(o => { if (o.isMesh) { o.material.transparent = true; o.material.opacity = 0; } });
+  }
+  // ねじれて潰れた体：首は横に折れ、片腕は逆に曲がっている
+  pose(t) {
+    const r = this.rig;
+    r.spine.rotation.z = 0.35; r.spine.rotation.y = 0.4;
+    r.neck.rotation.z = 1.15 + Math.sin(t * 7 + this.pos.x) * 0.12;
+    r.neck.rotation.x = -0.3;
+    r.armR.elbow.rotation.x = 1.4; r.armR.shoulder.rotation.z = 0.5;
+    r.armL.shoulder.rotation.z = -0.8;
+    r.jaw.rotation.x = 0.6 + Math.abs(Math.sin(t * 5)) * 0.3;
+    r.legL.knee.rotation.x += 0.35;
   }
   // 霧の中にしか姿を保てない
   update(dt, t) {
     super.update(dt, t);
     const want = this.fading ? 0 : 1;
     this.alpha += (want - this.alpha) * Math.min(1, dt * 1.5);
-    this.mesh.traverse(o => { if (o.isMesh) o.material.opacity = this.alpha; });
+    this.mats.skin.opacity = this.alpha; this.mats.bone.opacity = this.alpha;
+    this.mats.skin.depthWrite = this.alpha > 0.95;
     this.eyes.material.opacity *= this.alpha;
     if (this.fading && this.alpha < 0.03) this.gone = true;
-    // 首だけが別の生き物のように揺れる
-    this.head.rotation.x = Math.sin(t * 7 + this.pos.x) * 0.3;
   }
 }
 
 /* ============ 顔のない住人 : 都市を歩いているだけ。目が合うと、顔のない顔でこちらを見る(Level 11) ============ */
 export class Faceling extends Wanderer {
   constructor(game, pos) {
-    super(game, pos);
+    // ふつうの人の体つき。灰色の服を着ていて、顔のあるべき所には何もない
+    const mats = { skin: skinMaterial(0x8e8276, { rim: 0x2a2622, bump: 0.008 }), cloth: skinMaterial(0x3b3e44, { rim: 0x22252a, kind: 'cloth', bump: 0.01 }) };
+    super(game, pos, { body: BODY.human, mats });
+    // 手足も服の色に(手と頭だけ肌)
+    this.rig.group.traverse(o => { if (o.isMesh && o.geometry !== this.rig.geos.head && o.geometry !== this.rig.geos.hand && o.geometry !== this.rig.geos.fing1 && o.geometry !== this.rig.geos.fing2 && o.geometry !== this.rig.geos.neck) o.material = mats.cloth; });
     this.type = 'faceling';
     this.harmless = true;
     this.voice?.stop(); this.voice = game.audio.entityVoice('faceling');
     this.walkSpeed = 1.05;
-    const mat = new THREE.MeshLambertMaterial({ color: 0x8a847a, emissive: 0x201e1b });
-    this.mesh.traverse(o => { if (o.isMesh) o.material = mat; });
     this.eyes.visible = false;
     this.mesh.scale.setScalar(0.66);
-    this.head.scale.set(1, 1.25, 1);
+    this.baseLean = 0.02;
   }
   canSee() { return false; }
   hear() {}
@@ -593,10 +620,11 @@ export class Faceling extends Wanderer {
     }
     this.staring = this.state === 'stare';
     const m = this.mesh; m.position.set(this.pos.x, 0, this.pos.z); m.rotation.y = this.heading;
-    const cyc = t * 4.5, sw = Math.min(1, speed / 2);
-    this.legL.rotation.x = Math.sin(cyc) * 0.5 * sw; this.legR.rotation.x = -Math.sin(cyc) * 0.5 * sw;
-    this.armL.rotation.x = -Math.sin(cyc) * 0.3 * sw; this.armR.rotation.x = Math.sin(cyc) * 0.3 * sw;
-    this.head.rotation.z = this.staring ? Math.sin(t * 1.3) * 0.15 : 0;
+    animateHumanoid(this, dt, t, speed, false);
+    this.headTwitch = 0;
+    this.rig.head.rotation.z = this.staring ? Math.sin(t * 1.3) * 0.15 : 0;
+    this.rig.neck.rotation.x = this.staring ? -0.1 : 0.05;
+    this.rig.armL.fingers.concat(this.rig.armR.fingers).forEach(f => { f.k.rotation.x = -0.35; f.k2.rotation.x = -0.4; });
     this.footsteps(dt, speed, 1.2);
     this.voice?.set(tmp.set(this.pos.x, 1.6, this.pos.z), d < 12 ? (this.staring ? 0.5 : 0.15) : 0);
   }

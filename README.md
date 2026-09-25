@@ -85,7 +85,8 @@ src/levels/base.js               階層ロジックの土台
 src/levels/level0.js〜level12.js 各階層の仕掛け・メモ・環境音・BGM
 src/mapgen.js                    迷路生成と配置ヘルパー
 src/world.js                     3D構築・照明回路つき焼き込みライティング・扉・貼り紙
-src/entities.js                  徘徊者／笑顔／猟犬／ダラーのAI
+src/entities.js                  「何か」たちのAIと動き
+src/entitymodels.js              「何か」たちの3Dモデル(回転体＋頂点の歪み・焼き込み陰影・関節)
 src/player.js                    一人称移動・懐中電灯・正気度
 src/items.js                     拾えるもの
 src/audio.js                     効果音・環境音・BGM・残響の合成
