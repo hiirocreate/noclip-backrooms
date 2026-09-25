@@ -634,44 +634,16 @@ function haloTex() {
 }
 
 function smilerTex() {
-  // 暗がりに浮かぶ笑顔：ぼんやり光る目と、不ぞろいな歯の並んだ大きすぎる口
-  const [c, ctx] = canvas(512, 512);
-  ctx.clearRect(0, 0, 512, 512);
-  const glow = (x, y, r, a) => { const g = ctx.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, `rgba(255,255,245,${a})`); g.addColorStop(1, 'rgba(255,255,245,0)'); ctx.fillStyle = g; ctx.fillRect(x - r, y - r, r * 2, r * 2); };
-  // 目：わずかに非対称なアーモンド形。中心が一番明るい
-  for (const [x, y, rot] of [[165, 178, -0.12], [350, 172, 0.1]]) {
-    glow(x, y, 42, 0.28);
-    ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
-    ctx.shadowColor = '#fff'; ctx.shadowBlur = 24; ctx.fillStyle = 'rgba(255,255,248,0.95)';
-    ctx.beginPath(); ctx.moveTo(-32, 2); ctx.quadraticCurveTo(-2, -22, 32, -2); ctx.quadraticCurveTo(2, 16, -32, 2); ctx.fill();
-    ctx.shadowBlur = 0; ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.beginPath(); ctx.ellipse(3, 0, 3, 7, 0, 0, 7); ctx.fill();
-    ctx.restore();
-  }
-  // 口：頬の端まで裂けた弧
-  glow(256, 345, 120, 0.1);
-  ctx.save();
-  ctx.shadowColor = '#fff'; ctx.shadowBlur = 12;
-  ctx.fillStyle = 'rgba(255,255,245,0.92)';
-  ctx.beginPath(); ctx.moveTo(50, 262); ctx.bezierCurveTo(130, 420, 382, 420, 468, 256);
-  ctx.bezierCurveTo(380, 360, 132, 362, 50, 262); ctx.fill();
-  ctx.restore();
-  // 歯と歯の隙間(黒い線)。一本ずつ長さと傾きが違う
-  ctx.fillStyle = 'rgba(0,0,0,0.9)';
-  let s = 7; const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647);
-  const mouth = (t) => { const u = 1 - t; return [u * u * u * 50 + 3 * u * u * t * 130 + 3 * u * t * t * 382 + t * t * t * 468, u * u * u * 262 + 3 * u * u * t * 390 + 3 * u * t * t * 390 + t * t * t * 256]; };
-  for (let i = 1; i < 22; i++) {
-    const t = i / 22 + (rnd() - 0.5) * 0.012;
-    const [x, y] = mouth(t);
-    const h = 26 + rnd() * 22 + Math.sin(t * Math.PI) * 26;
-    ctx.save(); ctx.translate(x, y); ctx.rotate((t - 0.5) * 0.9 + (rnd() - 0.5) * 0.12);
-    ctx.fillRect(-1.6, -h * 0.95, 3.2, h);
-    ctx.restore();
-  }
-  // 上下の歯列の境目
-  ctx.strokeStyle = 'rgba(0,0,0,0.85)'; ctx.lineWidth = 3.5;
+  const [c, ctx] = canvas(256, 256);
+  ctx.clearRect(0, 0, 256, 256);
+  ctx.fillStyle = '#fff';
+  ctx.shadowColor = '#fff'; ctx.shadowBlur = 16;
+  for (const x of [80, 176]) { ctx.beginPath(); ctx.ellipse(x, 90, 14, 20, 0, 0, 7); ctx.fill(); }
   ctx.beginPath();
-  for (let i = 0; i <= 40; i++) { const t = i / 40; const [x, y] = mouth(t); const yy = y - 6 - Math.sin(t * Math.PI) * 16; i ? ctx.lineTo(x, yy) : ctx.moveTo(x, yy); }
-  ctx.stroke();
+  ctx.moveTo(30, 140); ctx.quadraticCurveTo(128, 250, 226, 140); ctx.quadraticCurveTo(128, 200, 30, 140); ctx.fill();
+  ctx.shadowBlur = 0; ctx.fillStyle = '#000';
+  for (let i = 0; i < 13; i++) { const x = 44 + i * 13.5; const y = 150 + Math.sin((i / 12) * Math.PI) * 28; ctx.fillRect(x, y - 6, 2, 16); }
+  ctx.fillRect(40, 157, 176, 2);
   return c;
 }
 

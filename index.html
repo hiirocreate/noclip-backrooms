@@ -31,10 +31,9 @@
 
   <!-- タッチ操作 -->
   <div id="touch" class="hidden">
-    <div id="stick-zone"><div id="stick-base"><div id="stick-knob"></div></div></div>
+    <div id="stick-zone"><div id="stick-base"><div id="stick-ring"></div><div id="stick-knob"></div></div></div>
     <div id="look-zone"></div>
     <div id="touch-buttons">
-      <button id="btn-run" class="tbtn">走る</button>
       <button id="btn-light" class="tbtn">ライト</button>
       <button id="btn-drink" class="tbtn small">飲む</button>
       <button id="btn-crouch" class="tbtn small">しゃがむ</button>
@@ -89,7 +88,7 @@
       <h2>あそびかた</h2>
       <p>あなたは現実から「noclip」し、終わりのない黄色い部屋へ落ちた。<br />階層ごとに、生き延び方も出口の見つけ方も違う。<b>落ちているメモ</b>が手がかりになる。</p>
       <ul>
-        <li><b>スマホ</b>：左側ドラッグで移動、右側ドラッグで視点。「走る」は押している間ダッシュ。近くに調べられる物があると「調べる」ボタンが出る。</li>
+        <li><b>スマホ</b>：左側ドラッグで移動、右側ドラッグで視点。スティックを外側の輪の外まで出すと走る。近くに調べられる物があると「調べる」ボタンが出る。</li>
         <li><b>PC</b>：WASD移動 / マウス視点 / Shift走る / C しゃがむ / F ライト / Q 飲む / E 調べる / Esc 一時停止</li>
         <li>走ると<b>足音</b>で「何か」に気づかれる。しゃがむと静かに動ける。</li>
         <li>暗闇や「何か」の近くにいると<b>正気</b>が減る。アーモンド水で回復できる。</li>
@@ -174,6 +173,7 @@
 
   <div id="fade"></div>
   <div id="scare"></div>
+  <div id="halluc"></div>
   <div id="loading" class="hidden">生成中…</div>
 
   <script type="module" src="./src/main.js"></script>

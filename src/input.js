@@ -65,16 +65,25 @@ export class Input {
       if (e.pointerId !== stickId) return;
       let dx = e.clientX - sx, dy = e.clientY - sy;
       const d = Math.hypot(dx, dy);
+      // つまみは外側の輪まで動く(移動量そのものは R で頭打ち)
+      const vis = Math.min(d, R * 1.85) / (d || 1);
+      knob.style.transform = `translate(${dx * vis}px, ${dy * vis}px)`;
       if (d > R) { dx *= R / d; dy *= R / d; }
-      knob.style.transform = `translate(${dx}px, ${dy}px)`;
       this.touchMove = { x: dx / R, y: -dy / R };
-      // スティックを大きく倒すと自動で走る(設定で「走る」ボタン併用可)
-      this.stickRun = d > R * 1.6;
+      // スティックを外側の輪(半径78px)の外まで出すと走る。
+      // 境目でちらつかないよう、止まる距離は少しだけ内側にする
+      const RING = 78;
+      const run = d > (this.stickRun ? RING - 6 : RING);
+      if (run !== this.stickRun) {
+        this.stickRun = run;
+        base.classList.toggle('run', run);
+        if (run) navigator.vibrate?.(12);
+      }
     });
     const endStick = (e) => {
       if (e.pointerId !== stickId) return;
       stickId = null; this.touchMove = null; this.stickRun = false;
-      knob.style.transform = ''; base.classList.remove('active'); defaultPos();
+      knob.style.transform = ''; base.classList.remove('active', 'run'); defaultPos();
     };
     zone.addEventListener('pointerup', endStick);
     zone.addEventListener('pointercancel', endStick);
@@ -96,7 +105,6 @@ export class Input {
     lookZone.addEventListener('pointerup', endLook);
     lookZone.addEventListener('pointercancel', endLook);
 
-    const runBtn = document.getElementById('btn-run');
     // 指がボタンの縁からわずかに外れてもダッシュを止めない。pointer capture
     // により、離した／キャンセルされた時だけ確実に解除される。
     const hold = (el, on, off) => {
@@ -117,7 +125,9 @@ export class Input {
       el.addEventListener('pointercancel', release);
       el.addEventListener('lostpointercapture', release);
     };
-    hold(runBtn, () => { this.touchRun = true; runBtn.classList.add('on'); }, () => { this.touchRun = false; runBtn.classList.remove('on'); });
+    // 「走る」ボタンは廃止(スティックだけで走れる)。古いHTMLが残っていても動くようにしておく
+    const runBtn = document.getElementById('btn-run');
+    if (runBtn) hold(runBtn, () => { this.touchRun = true; runBtn.classList.add('on'); }, () => { this.touchRun = false; runBtn.classList.remove('on'); });
     const tap = (id, fn) => document.getElementById(id).addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); fn(); });
     tap('btn-light', () => this.actions.add('light'));
     tap('btn-drink', () => this.actions.add('drink'));

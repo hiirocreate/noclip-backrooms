@@ -318,8 +318,14 @@ class Game {
     this.camera.fov = this.baseFov();
     this.camera.rotation.z = 0;
     this.camera.updateProjectionMatrix();
-    $('scare').classList.remove('sanity');
+    $('scare').classList.remove('sanity', 'bite');
     this.fx.u.flash.value = 0; this.fx.u.fear.value = 0; this.fx.u.insanity.value = 0;
+    this.fx.u.ghost.value = 0; this.fx.u.pulse.value = 0; this.fx.u.invert.value = 0; this.fx.u.blood.value = 0; this.fx.u.blackout.value = 0;
+    this.fx.u.tint.value.set(1, 1, 1);
+    if (this.deathLight) { this.deathLight.parent?.remove(this.deathLight); this.deathLight = null; }
+    this.sanityStage = 0; this.nextWhisperText = 6; this.invertT = 0; this.beatAt = -9;
+    $('halluc').innerHTML = ''; $('bars').classList.remove('san-warn', 'san-crit');
+    this.audio.setTinnitus?.(0);
     if (levelIndex(id) === 0 && !retry && !resume) { this.player.battery = 100; this.player.waters = 1; }
     this.player.flashlight = false; $('btn-light').classList.remove('on');
     $('btn-light').textContent = logic.lightLabel?.() || 'ライト';
@@ -356,6 +362,7 @@ class Game {
   }
 
   cleanupLevel() {
+    this.audio.setTinnitus?.(0); document.getElementById('halluc').innerHTML = '';
     this.logic?.dispose(); this.logic = null;
     for (const e of this.entities) e.dispose();
     for (const f of this.fakes) f.ent.dispose();
@@ -442,6 +449,17 @@ class Game {
     this.dyingT = 0; this.killer = cause === 'sanity' ? null : killer;
     this.deathStart = this.camera.position.clone();
     this.deathFov = this.camera.fov;
+    this.deathYaw = this.player.yaw; this.deathPitch = this.player.pitch;
+    this.audio.setTinnitus?.(0);
+    $('halluc').innerHTML = ''; this.fx.u.blackout.value = 0; this.invertT = 0;
+    if (this.killer) {
+      // 顔を下から照らす光(捕まった瞬間だけ)
+      this.deathLight = new THREE.PointLight(0xffe2c4, this.killer.type === 'spider' ? 9 : this.killer.type === 'hound' ? 6 : 4.5, 4, 1.4);
+      this.scene.add(this.deathLight);
+      this.killer.dyingPose = true;
+      $('hud').classList.add('hidden'); $('touch').classList.add('hidden');
+      $('scare').classList.remove('sanity', 'bite'); void $('scare').offsetWidth; $('scare').classList.add('bite');
+    }
     if (cause === 'sanity') {
       this.audio.sanityCollapse();
       $('scare').classList.remove('sanity');
@@ -614,14 +632,16 @@ class Game {
     this.audio.setHum(w.lightAt(p.pos.x, p.pos.z) * 0.8 * Math.min(1, w.power));
     this.audio.setIntensity(Math.min(1, Math.max(logic.tension(), this.fear * 1.2)));
     this.hbTimer -= dt;
-    const hb = Math.max(this.fear, (40 - p.sanity) / 40);
-    if (hb > 0.15 && this.hbTimer <= 0) { this.audio.heartbeat(hb); this.hbTimer = 1.1 - hb * 0.6; }
+    // 鼓動：恐怖、または正気35未満で聞こえ始める
+    const hb = Math.max(this.fear, p.sanity < 35 ? 0.16 + (35 - p.sanity) / 35 * 0.84 : 0);
+    if (hb > 0.15 && this.hbTimer <= 0) { this.audio.heartbeat(hb); this.hbTimer = 1.1 - hb * 0.6; this.beatAt = this.time; }
 
     // 画面効果
     const u = this.fx.u;
     u.fear.value = this.fear;
     u.insanity.value = Math.max(0, 1 - p.sanity / 60);
     u.flash.value = Math.max(0, u.flash.value - dt * 2);
+    this.updateSanityFX(dt);
 
     this.updateHUD();
   }
@@ -630,16 +650,7 @@ class Game {
     this.dyingT += dt;
     const u = this.fx.u;
     const k = this.killer;
-    if (k && k.mesh) {
-      const dir = new THREE.Vector3(); this.camera.getWorldDirection(dir); dir.y = 0; dir.normalize();
-      const dist = k.type === 'smiler' ? 0.7 : k.type === 'hound' || k.type === 'spider' ? 1.75 : 0.75;
-      const x = this.camera.position.x + dir.x * dist, z = this.camera.position.z + dir.z * dist;
-      if (k.type === 'smiler') { k.mesh.position.set(x, this.camera.position.y, z); k.mesh.material.opacity = 1; k.mesh.scale.set(1.6, 1.6, 1); }
-      else {
-        k.mesh.position.set(x, k.type === 'hound' ? this.camera.position.y - 0.8 : k.type === 'spider' ? this.camera.position.y - 1.0 : this.camera.position.y - 2.35 * k.mesh.scale.y, z);
-        k.mesh.rotation.y = Math.atan2(-dir.x, -dir.z);
-      }
-    }
+    if (k && k.mesh) this.poseKiller(k, this.dyingT);
     if (this.killer === null) {
       // 正気喪失：視界が潰れながら倒れ込む
       const t = Math.min(1, this.dyingT / 1.3);
@@ -654,19 +665,110 @@ class Game {
       u.insanity.value = 1;
       u.flash.value = this.dyingT < 0.12 || (this.dyingT > 0.42 && this.dyingT < 0.5) ? 0.9 : Math.max(0, 0.2 - this.dyingT * 0.1);
     } else {
-      this.camera.position.x += (Math.random() - 0.5) * 0.04;
-      this.camera.position.y += (Math.random() - 0.5) * 0.04;
-      u.flash.value = this.dyingT < 0.06 ? 0.7 : Math.max(0, 0.25 - this.dyingT * 1.2);
+      // 捕まった：一瞬で目の前まで迫り、画面が赤く染まって暗転する
+      const T = this.dyingT;
+      const hit = T > 0.2 && T < 0.27;
+      u.flash.value = hit ? 0.55 : T < 0.05 ? 0.25 : 0;
+      u.blood.value = Math.min(0.55, Math.max(0, (T - 0.2) * 0.9));
+      u.tint.value.set(1.08 + Math.sin(T * 40) * 0.06, 0.92 - Math.min(0.2, T * 0.25), 0.9 - Math.min(0.2, T * 0.25));
+      u.insanity.value = Math.min(1, 0.3 + T);
+      u.ghost.value = T > 0.2 ? 0.3 : 0;
+      if (T > 1.08) { $('fade').style.transition = 'none'; $('fade').classList.add('on'); }
     }
     u.fear.value = 1;
-    this.player.light.intensity = 30;
+    this.player.light.intensity = this.killer ? 6 : 30;
     if (this.dyingT > 1.3 && this.state === 'dying') {
       this.state = 'dead';
       $('hud').classList.add('hidden'); $('touch').classList.add('hidden');
       this.show('screen-dead');
+      if (this.killer) { this.killer.dyingPose = false; }
+      setTimeout(() => { $('fade').classList.remove('on'); $('fade').style.transition = ''; }, 30);
       this.audio.stopAmbient();
       this.audio.stopMusic();
     }
+  }
+
+  // 正気度が下がるほど、はっきり「おかしくなっていく」と分かるようにする
+  updateSanityFX(dt) {
+    const p = this.player, u = this.fx.u, s = p.sanity;
+    const k = Math.max(0, Math.min(1, (55 - s) / 55));   // 55 から効き始める
+    const k2 = k * k;
+    // 二重視・鼓動に合わせた視界の狭まり
+    u.ghost.value = Math.max(0, (k - 0.15) / 0.85);
+    // 正気35未満：鼓動に合わせて視界がわずかに狭まる(下がるほど強く)
+    const beat = Math.exp(-(this.time - (this.beatAt ?? -9)) * 5);
+    const kp = Math.max(0, Math.min(1, (35 - s) / 35));
+    u.pulse.value = kp > 0 ? Math.min(0.75, (0.12 + kp * 0.5) * beat + kp * 0.1) : 0;
+    // 視界がゆっくり傾き、画角が呼吸するように伸び縮みする
+    const cam = this.camera;
+    cam.rotation.z += Math.sin(this.time * 0.37) * 0.07 * k2 + Math.sin(this.time * 1.9) * 0.012 * k2;
+    const fov = this.baseFov() + Math.sin(this.time * 0.8) * 5 * k2 + beat * 2.5 * k2;
+    if (Math.abs(cam.fov - fov) > 0.01) { cam.fov = fov; cam.updateProjectionMatrix(); }
+    // 正気19未満：不定期に一瞬(約0.05秒)暗転する
+    this.invertT = Math.max(0, (this.invertT || 0) - dt);
+    if (s < 19 && this.invertT <= 0 && Math.random() < dt * 0.22) this.invertT = 0.04 + Math.random() * 0.03;
+    u.invert.value = 0;
+    u.blackout.value = this.invertT > 0 ? 1 : 0;
+    // 耳鳴り
+    this.audio.setTinnitus?.(Math.max(0, (k - 0.3) / 0.7));
+    // 段階ごとのひとこと
+    const stages = [[55, '耳鳴りがする…頭が重い'], [35, '視界が歪む。このままだと、正気を保てない'], [10, p.waters > 0 ? 'もう限界だ…アーモンド水を(Q / 飲む)' : 'もう限界だ…アーモンド水が欲しい']];
+    const st = this.sanityStage || 0;
+    if (st < stages.length && s < stages[st][0]) { this.sanityStage = st + 1; this.say(stages[st][1], 4); }
+    else if (st > 0 && s > stages[st - 1][0] + 10) this.sanityStage = st - 1;
+    // 正気27未満：ささやき声が聞こえ始め、見えない誰かの言葉が画面に浮かぶ
+    this.nextWhisperText = (this.nextWhisperText ?? 3) - dt;
+    if (s < 27 && this.nextWhisperText <= 0) {
+      this.nextWhisperText = 1.5 + Math.random() * 4 * (s / 27 + 0.3);
+      const words = ['うしろ', 'ここにいる', 'みている', 'もどれない', 'でぐちはない', 'ずっといっしょ', 'ふりかえって', 'きこえる？', 'もうすぐ'];
+      const el = document.createElement('span');
+      el.textContent = words[Math.floor(Math.random() * words.length)];
+      el.style.left = (15 + Math.random() * 70) + '%'; el.style.top = (18 + Math.random() * 60) + '%';
+      el.style.fontSize = (16 + Math.random() * 18) + 'px';
+      $('halluc').appendChild(el);
+      setTimeout(() => el.remove(), 950);
+      this.audio.distantEvent({ x: p.pos.x + (Math.random() - 0.5) * 4, y: 1.6, z: p.pos.z + (Math.random() - 0.5) * 4 }, 'whisper');
+    }
+    const bars = $('bars');
+    bars.classList.toggle('san-warn', s < 40 && s >= 27);
+    bars.classList.toggle('san-crit', s < 27);
+  }
+
+  // 捕まった時の演出：相手の顔が目の前に来るよう体ごと動かす(頭の位置を基準に合わせる)
+  poseKiller(k, T) {
+    const cam = this.camera;
+    const lunge = Math.min(1, T / 0.22);
+    const ease = lunge * lunge * lunge;
+    const near = k.type === 'smiler' ? 0.8 : k.type === 'spider' ? 0.8 : k.type === 'hound' ? 0.75 : k.type === 'beast' ? 0.85 : 0.68;
+    const dist = 2.6 + (near - 2.6) * ease;
+    const shake = T > 0.2 ? 1 : 0.2;
+    // カメラ：少し上を向きかけて、激しく揺れる
+    const pitch = this.deathPitch + (0.02 - this.deathPitch) * Math.min(1, T * 6);
+    cam.position.copy(this.deathStart);
+    cam.position.x += (Math.random() - 0.5) * 0.05 * shake;
+    cam.position.y += (Math.random() - 0.5) * 0.05 * shake - Math.min(0.12, T * 0.3);
+    cam.rotation.set(pitch + (Math.random() - 0.5) * 0.05 * shake, this.deathYaw + (Math.random() - 0.5) * 0.05 * shake, (Math.random() - 0.5) * 0.08 * shake + Math.min(0.25, T * 0.3), 'YXZ');
+    cam.fov = this.deathFov + (58 - this.deathFov) * Math.min(1, T * 4);
+    cam.updateProjectionMatrix();
+    const fwd = new THREE.Vector3(-Math.sin(this.deathYaw), 0, -Math.cos(this.deathYaw));
+    const target = cam.position.clone().addScaledVector(fwd, dist);
+    target.y += 0.02;
+    if (this.deathLight) this.deathLight.position.copy(cam.position).addScaledVector(fwd, dist * 0.35).add(new THREE.Vector3(0.15, -0.5, 0));
+    if (k.type === 'smiler') {
+      k.mesh.position.copy(target);
+      k.mesh.material.opacity = Math.random() < 0.12 ? 0.3 : 1;
+      const sc = 1.1 + ease * 0.55 + (T > 0.2 ? Math.sin(T * 50) * 0.05 : 0);
+      k.mesh.scale.set(sc, sc, 1);
+      return;
+    }
+    k.mesh.rotation.y = Math.atan2(-fwd.x, -fwd.z);
+    k.deathPose?.(T);
+    // 頭の位置を目標に合わせる
+    const head = k.rig?.head || k.rig?.headTilt || k.rig?.eyes?.[0] || k.mesh;
+    k.mesh.position.set(0, 0, 0);
+    k.mesh.updateMatrixWorld(true);
+    const hp = head.getWorldPosition(new THREE.Vector3());
+    k.mesh.position.copy(target).sub(hp);
   }
 
   updateHUD() {

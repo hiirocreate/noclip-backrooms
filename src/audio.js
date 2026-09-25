@@ -339,6 +339,20 @@ export class Audio {
     const n = this.noise(); const ng = this.gain(0.6); this.chain(n, ng, ws); this.oneShot(n, 1.6);
   }
 
+  // 正気度が低い間ずっと鳴る、かすかな耳鳴り(0〜1)
+  setTinnitus(level) {
+    if (!this.ctx) return;
+    if (!this.tinn) {
+      if (level <= 0) return;
+      const o = this.osc('sine', 6300), o2 = this.osc('sine', 6340), g = this.gain(0);
+      o.connect(g); o2.connect(g); g.connect(this.master); o.start(); o2.start();
+      this.tinn = { o, o2, g };
+    }
+    const v = Math.max(0, Math.min(1, level));
+    this.tinn.g.gain.setTargetAtTime(v * v * 0.018, this.t, 0.3);
+    this.tinn.o.frequency.setTargetAtTime(6300 + Math.sin(this.t * 0.7) * 120 * v, this.t, 0.5);
+  }
+
   // 正気度が尽きた時だけ鳴る、内耳の耳鳴りと低い脈動。
   sanityCollapse() {
     if (!this.ctx) return;

@@ -1,7 +1,7 @@
 // 「何か」たち：徘徊者 / 笑顔 / 猟犬
 import * as THREE from 'three';
 import { FLOOR } from './mapgen.js';
-import { BODY, buildHumanoid, addMouth, buildHound, buildSpider, skinMaterial } from './entitymodels.js';
+import { BODY, buildHumanoid, addMouth, addHair, hairMaterial, buildHound, buildSpider, skinMaterial } from './entitymodels.js';
 
 const DIR8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
 const tmp = new THREE.Vector3();
@@ -96,17 +96,23 @@ class Entity {
 
 /* ============ 徘徊者 : 背の高い黒い人影 ============ */
 export class Wanderer extends Entity {
-  constructor(game, pos, { body = BODY.tall, mats = null } = {}) {
+  constructor(game, pos, { body = BODY.tall, mats = null, hair = body === BODY.tall } = {}) {
     super(game, 'wanderer', pos);
     const lv = game.cfg;
     this.walkSpeed = 1.3; this.chaseSpeed = lv.chaseSpeed || 3.8;
     const h = Math.min(lv.height - 0.15, 2.7);
     const s = h / 2.7;
-    // 痩せこけた長身の人影(黒ずんだ皮膚。輪郭だけがかすかに光る)
-    this.mats = mats || { skin: skinMaterial(0x6a5c52, { rim: 0x2c2723 }) };
+    // 痩せこけた長身の人影。濡れて黒ずんだ皮膚、顔を覆う長い黒髪、裂けた口
+    this.mats = mats || { skin: skinMaterial(0x5e5049, { rim: 0x2a2522, wet: 0.6 }) };
     const rig = this.rig = buildHumanoid(body, this.mats);
     this.bodyType = body;
-    this.baseLean = body.hunch || 0.14;
+    this.baseLean = body.hunch || 0.3;
+    this.headBase = body === BODY.tall ? 0.32 : 0;   // 首が常に傾いている
+    if (hair) {
+      this.mats.hair = this.mats.hair || hairMaterial();
+      addHair(rig, body, this.mats.hair, { seed: Math.floor(Math.random() * 1000) });
+    }
+    if (body === BODY.tall && !rig.mouthCav) addMouth(rig, body, this.mats, { teeth: 14, open: 0.05 });
     this.torso = rig.chest; this.head = rig.head;
     this.armL = rig.armL.shoulder; this.armR = rig.armR.shoulder;
     this.legL = rig.legL.hip; this.legR = rig.legR.hip;
@@ -137,10 +143,32 @@ export class Wanderer extends Entity {
     return g.world.los(this.pos.x, this.pos.z, p.pos.x, p.pos.z);
   }
 
+  // 捕まえた瞬間：両腕を顔の横へ伸ばし、口を限界まで開く
+  deathPose(T) {
+    const r = this.rig;
+    const q = Math.min(1, T / 0.22), n = () => (Math.random() - 0.5);
+    r.body.position.y = this.bodyType.hipY; r.body.rotation.z = n() * 0.05;
+    r.spine.rotation.set(0.15 * q, 0, 0); r.chest.rotation.z = 0;
+    r.neck.rotation.set(-0.15, 0, 0);
+    r.head.rotation.set(-0.25 + n() * 0.12, n() * 0.1, (this.headBase || 0) * 0.6 + n() * 0.15);
+    for (const [arm, sd] of [[r.armL, -1], [r.armR, 1]]) {
+      arm.shoulder.rotation.set(-1.45 * q + n() * 0.06, 0, sd * (0.55 * q));
+      arm.elbow.rotation.x = -0.5 * q; arm.wrist.rotation.x = 0.4;
+      arm.fingers.forEach((f) => { const c = -0.5 + n() * 0.5; f.k.rotation.x = c; f.k2.rotation.x = c * 1.5; });
+    }
+    if (r.mouthCav) { r.jaw.rotation.x = 0.2 + q * 0.95 + n() * 0.08; r.mouthCav.scale.y = 0.4 + r.jaw.rotation.x * 0.75; }
+    // 前髪が割れて、顔が見える
+    if (r.hair) r.hair.forEach((h, i) => { h.visible = i !== 0; h.rotation.x = -0.3 * q; h.rotation.z = (i === 1 ? -0.25 : i === 2 ? 0.25 : 0) * q; });
+    if (this.eyes) { this.eyes.visible = this.type !== 'duller' && this.type !== 'faceling'; this.eyes.material.opacity = 1; }
+  }
+
   animate(dt, t, speed, reach) {
     animateHumanoid(this, dt, t, speed, reach);
     this.eyes.material.opacity = reach ? 0.95 : 0.4;
+    const r = this.rig;
+    if (r.mouthCav && !this.pose) r.jaw.rotation.x = reach ? 0.25 + Math.abs(Math.sin(t * 6)) * 0.3 : 0.05 + Math.max(0, Math.sin(t * 0.9 + this.pos.x)) * 0.12;
     this.pose?.(t);
+    if (r.mouthCav) r.mouthCav.scale.y = 0.35 + r.jaw.rotation.x * 0.75;
   }
 
   hear(pos, radius) {
@@ -194,39 +222,68 @@ export class Wanderer extends Entity {
   }
 }
 
-/* ---- 人型の動き(徘徊者・ダラー・主・潰れたもの・住人で共通) ---- */
+/* ---- 人型の動き(徘徊者・ダラー・主・潰れたもの・住人で共通) ----
+ * なめらかに動くとマネキンのように見えるので、わざと「かくつき」を入れる：
+ * 数フレーム止まってから一気に動く / 首が急に折れる / 体が痙攣する */
 function animateHumanoid(e, dt, t, speed, reach) {
   const r = e.rig;
-  const cyc = t * (speed > 3 ? 9 : 4.5) + e.pos.x;
+  const calm = e.type === 'faceling' || e.type === 'duller';
+  if (!calm) {
+    // コマ落とし：たまに一瞬だけ静止して、次のフレームで追いつく
+    if (e.freeze > 0) { e.freeze -= dt; e.animT = (e.animT ?? t); return; }
+    if (Math.random() < dt * (reach ? 2.2 : 0.9)) e.freeze = 0.06 + Math.random() * (reach ? 0.1 : 0.22);
+  }
+  e.animT = t;
+  const cyc = t * (speed > 3 ? 8.5 : 4.2) + e.pos.x;
   const sw = Math.min(1, speed / 2);
   const s1 = Math.sin(cyc);
-  // 脚：股関節と膝(後ろへ曲がる)
-  r.legL.hip.rotation.x = s1 * 0.5 * sw; r.legR.hip.rotation.x = -s1 * 0.5 * sw;
-  r.legL.knee.rotation.x = Math.max(0, Math.sin(cyc - 1.2)) * 0.9 * sw + 0.05;
-  r.legR.knee.rotation.x = Math.max(0, Math.sin(cyc + Math.PI - 1.2)) * 0.9 * sw + 0.05;
+  // 痙攣(ビクッと体が跳ねる)
+  if (!calm && Math.random() < dt * (reach ? 1.5 : 0.35)) e.spasm = 1;
+  e.spasm = Math.max(0, (e.spasm || 0) - dt * 5);
+  const sp = e.spasm * e.spasm;
+  // 脚：膝を曲げたまま、引きずるように歩く
+  const drag = calm ? 0 : 0.18;
+  r.legL.hip.rotation.x = s1 * 0.5 * sw - drag * 0.6; r.legR.hip.rotation.x = -s1 * 0.5 * sw - drag * 0.6;
+  r.legL.knee.rotation.x = Math.max(0, Math.sin(cyc - 1.2)) * 0.9 * sw + 0.05 + drag;
+  r.legR.knee.rotation.x = Math.max(0, Math.sin(cyc + Math.PI - 1.2)) * 0.9 * sw + 0.05 + drag * 1.4;
   r.legL.ankle.rotation.x = -r.legL.knee.rotation.x * 0.4; r.legR.ankle.rotation.x = -r.legR.knee.rotation.x * 0.4;
-  // 上半身：前かがみ・揺れ・呼吸
-  r.body.position.y = e.bodyType.hipY + Math.abs(Math.cos(cyc)) * 0.03 * sw;
-  r.body.rotation.z = Math.sin(t * 1.3) * 0.04;
-  r.spine.rotation.x = e.baseLean + (reach ? 0.18 : 0) + Math.sin(t * 1.7) * 0.015;
+  r.legR.hip.rotation.z = calm ? 0 : 0.06; // 片脚が外に開いている
+  // 上半身：前かがみ・左右非対称・揺れ・呼吸
+  r.body.position.y = e.bodyType.hipY + Math.abs(Math.cos(cyc)) * 0.03 * sw - drag * 0.08;
+  r.body.rotation.z = Math.sin(t * 1.3) * 0.04 + (calm ? 0 : 0.07) + sp * 0.15;
+  r.spine.rotation.x = e.baseLean + (reach ? 0.35 + Math.sin(t * 7) * 0.05 : 0) + Math.sin(t * 1.7) * 0.02 - sp * 0.35;
+  r.spine.rotation.y = calm ? 0 : Math.sin(t * 0.6 + e.pos.z) * 0.12;
+  r.chest.rotation.z = calm ? 0 : -0.1; // 片方の肩が落ちている
   r.chest.scale.set(1 + Math.sin(t * 1.7) * 0.012, 1, 1 + Math.sin(t * 1.7) * 0.02);
-  r.neck.rotation.x = 0.2 + (reach ? -0.25 : 0);
-  // 腕：だらりと下げて振る / 追うときは前へ伸ばす
+  r.neck.rotation.x = (calm ? 0.2 : 0.35) + (reach ? -0.45 : 0) + sp * 0.5;
+  // 腕：だらりと垂れて遅れて揺れる / 追うときは前へ突き出して掻く
   for (const [arm, sd] of [[r.armL, -1], [r.armR, 1]]) {
     const ph = sd < 0 ? s1 : -s1;
-    arm.shoulder.rotation.x = -ph * 0.35 * sw + (reach ? -1.15 + Math.sin(t * 6 + sd) * 0.08 : 0);
-    arm.shoulder.rotation.z = sd * (reach ? 0.12 : 0.07);
-    arm.elbow.rotation.x = reach ? -0.25 : -0.12 - Math.max(0, ph) * 0.3 * sw;
-    arm.wrist.rotation.x = reach ? 0.2 : 0.1;
-    // 長い指がゆっくり動く
+    const claw = reach ? Math.sin(t * 9 + sd * 1.7) : 0;
+    arm.shoulder.rotation.x = -ph * 0.3 * sw + (reach ? -1.35 + claw * 0.25 : 0) + (sd < 0 ? 0.05 : -0.04);
+    arm.shoulder.rotation.z = sd * (reach ? 0.18 : 0.05) + (calm ? 0 : sd < 0 ? -0.05 : 0.02) + sp * sd * 0.35;
+    arm.elbow.rotation.x = reach ? -0.35 - Math.max(0, claw) * 0.5 : -0.08 - Math.max(0, ph) * 0.25 * sw;
+    arm.wrist.rotation.x = reach ? 0.35 : 0.15;
+    // 長い指が別々に、不規則に動く
     arm.fingers.forEach((f, i) => {
-      const curl = reach ? 0.15 + Math.sin(t * 5 + i) * 0.25 : 0.25 + Math.sin(t * 1.1 + i * 0.7 + sd) * 0.15;
-      f.k.rotation.x = -curl; f.k2.rotation.x = -curl * 1.3;
+      const n = Math.sin(t * (reach ? 11 : 2.3) + i * 1.9 + sd * 3) * Math.sin(t * 0.7 + i);
+      const curl = reach ? 0.1 + Math.max(0, claw) * 0.9 + n * 0.3 : 0.2 + n * 0.35;
+      f.k.rotation.x = -curl; f.k2.rotation.x = -curl * 1.4 - (calm ? 0 : 0.2);
     });
   }
-  // 首が不自然にかくつく
-  if (Math.random() < dt * 2) e.headTwitch = (Math.random() - 0.5) * 1.2;
-  r.head.rotation.z += ((e.headTwitch || 0) - r.head.rotation.z) * Math.min(1, dt * 20);
+  // 首：傾いたまま。ときどき急にカクッと折れる / 小刻みに震える
+  if (Math.random() < dt * (reach ? 3 : 1.2)) e.headTwitch = (Math.random() - 0.5) * (calm ? 0.6 : 1.6);
+  if (!calm && Math.random() < dt * 0.4) e.shudder = 0.5 + Math.random() * 0.6;
+  e.shudder = Math.max(0, (e.shudder || 0) - dt);
+  const target = (e.headBase || 0) + (e.headTwitch || 0) * 0.5;
+  r.head.rotation.z += (target - r.head.rotation.z) * Math.min(1, dt * 35);
+  r.head.rotation.x = (e.shudder > 0 ? Math.sin(t * 70) * 0.09 : 0) + sp * -0.4;
+  r.head.rotation.y = e.shudder > 0 ? Math.sin(t * 53) * 0.12 : Math.sin(t * 0.5 + e.pos.x) * 0.1;
+  // 髪が遅れて揺れる
+  if (r.hair) r.hair.forEach((h, i) => {
+    h.rotation.x = -r.neck.rotation.x * 0.35 - r.spine.rotation.x * 0.3 + Math.sin(t * 2.1 + i) * 0.03 + Math.sin(cyc * 2) * 0.05 * sw;
+    h.rotation.z = -r.head.rotation.z * 0.6 + Math.sin(t * 1.7 + i * 2) * 0.03;
+  });
 }
 
 /* ============ 笑顔 : 暗がりに浮かぶ顔 ============ */
@@ -322,11 +379,18 @@ export class Hound extends Entity {
   constructor(game, pos) {
     super(game, 'hound', pos);
     // あばらの浮いた、毛のない猟犬
-    const rig = this.rig = buildHound(skinMaterial(0x1d130f, { rim: 0x3a2419 }));
+    const rig = this.rig = buildHound(skinMaterial(0x3c2b25, { rim: 0x3a2419, wet: 0.35, bump: 0.04 }));
     this.headG = rig.headG; this.jaw = rig.jaw; this.legs = rig.legs;
     this.mesh = rig.group; game.scene.add(rig.group);
     this.walkSpeed = 1.6; this.huntSpeed = 5.4;
     this.randomTarget();
+  }
+
+  deathPose(T) {
+    const r = this.rig, q = Math.min(1, T / 0.22), n = () => (Math.random() - 0.5);
+    r.neck.rotation.x = -2.0 + 0.9 * q;
+    r.headTilt.rotation.set(2.0 - 0.15 - 0.9 * q + n() * 0.15, n() * 0.15, n() * 0.3);
+    this.jaw.rotation.x = 0.2 + q * 0.75 + n() * 0.1;
   }
 
   hear(pos, radius, relay = false) {
@@ -389,7 +453,11 @@ export class Hound extends Entity {
     r.bodyG.scale.y = 1 + Math.sin(t * (this.state === 'hunt' ? 9 : 2.2)) * 0.02; // 荒い呼吸
     r.tail.rotation.z = Math.sin(t * 2.3) * 0.2;
     this.jaw.rotation.x = 0.12 + Math.abs(Math.sin(t * (this.state === 'hunt' ? 11 : 3))) * (this.state === 'hunt' ? 0.4 : 0.12);
-    this.headG.rotation.y = this.state === 'sniff' ? Math.sin(t * 6) * 0.5 : Math.sin(t * 0.9) * 0.08;
+    // 頭が不規則にビクッと振れる
+    if (Math.random() < dt * (this.state === 'hunt' ? 3 : 1)) this.headJerk = (Math.random() - 0.5) * 1.1;
+    this.headJerk = (this.headJerk || 0) * Math.max(0, 1 - dt * 6);
+    this.headG.rotation.y = (this.state === 'sniff' ? Math.sin(t * 6) * 0.5 : Math.sin(t * 0.9) * 0.08) + this.headJerk;
+    this.rig.headTilt.rotation.z = this.headJerk * 0.6;
     r.neck.rotation.x = -2.0 + (this.state === 'sniff' ? 0.45 : this.state === 'hunt' ? 0.2 : 0);
     this.footsteps(dt, speed, 0.9);
     this.voice?.set(tmp.set(this.pos.x, 0.8, this.pos.z), d < 25 ? (this.state === 'hunt' ? 1 : 0.4) : 0);
@@ -439,13 +507,13 @@ export class Duller extends Wanderer {
 export class Beast extends Wanderer {
   constructor(game, pos, { home = null, range = 10 } = {}) {
     // 肩の盛り上がった巨体。猫背で、裂けた口に歯が並ぶ
-    const mats = { skin: skinMaterial(0x3e2b22, { rim: 0x1e0c06, emissive: 0x030100 }) };
+    const mats = { skin: skinMaterial(0x5a3a30, { rim: 0x1e0c06, emissive: 0x030100, wet: 0.3, bump: 0.05 }) };
     super(game, pos, { body: BODY.bulky, mats });
     this.type = 'beast';
     this.voice?.stop(); this.voice = game.audio.entityVoice('beast');
     this.walkSpeed = 0.95; this.chaseSpeed = 3.5;
     this.home = home ? home.clone() : pos.clone(); this.range = range;
-    addMouth(this.rig, BODY.bulky, mats, { teeth: 12, open: 0.35 });
+    addMouth(this.rig, BODY.bulky, mats, { teeth: 16, open: 0.35 });
     this.eyes.material.color.set(0xff6a3a);
     this.randomTarget();
   }
@@ -470,8 +538,8 @@ export class Beast extends Wanderer {
 export class Spider extends Entity {
   constructor(game, pos) {
     super(game, 'spider', pos);
-    const skin = skinMaterial(0x17110d, { rim: 0x33271c, kind: 'hair', bump: 0.03 });
-    const abd = skinMaterial(0x1c140f, { rim: 0x3a2c20, kind: 'hair', bump: 0.035 });
+    const skin = skinMaterial(0x17110d, { rim: 0x33271c, kind: 'hair', bump: 0.03, wet: 0.2 });
+    const abd = skinMaterial(0x1c140f, { rim: 0x3a2c20, kind: 'hair', bump: 0.035, wet: 0.7 });
     const eye = new THREE.MeshBasicMaterial({ color: 0xff2a1a, fog: false });
     const fang = new THREE.MeshLambertMaterial({ color: 0x0a0806, emissive: 0x050302 });
     const rig = this.rig = buildSpider({ skin, abd, leg: skin, eye, fang });
@@ -482,6 +550,15 @@ export class Spider extends Entity {
     this.home = pos.clone();
     this.state = 'wait';
     this.huntSpeed = 5.6; this.chaseSpeed = 4.3;
+  }
+
+  deathPose(T) {
+    const r = this.rig, q = Math.min(1, T / 0.22);
+    r.bodyG.rotation.x = -0.28 * q;
+    r.fangs.forEach((f, i) => { f.rotation.z = (i ? 1 : -1) * (0.6 + Math.random() * 0.2); });
+    this.eyeMat.color.setRGB(1, 0.55, 0.4);
+    r.eyes.forEach(e => e.scale.setScalar(1.4 + Math.random() * 0.2));
+    this.legs.forEach((l, i) => { if (i % 4 < 2) { l.lift.rotation.z = l.side * (2.5 + Math.random() * 0.1); l.knee.rotation.z = l.side * -1.2; } });
   }
 
   // 糸の震え・大きな物音に反応(歩く足音程度では気づかない)
@@ -544,13 +621,15 @@ export class Spider extends Entity {
 /* ============ 潰れたもの : 霧の中から現れる、人の形を失った何か(Level 9) ============ */
 export class Mangled extends Wanderer {
   constructor(game, pos) {
-    const mats = { skin: skinMaterial(0x2c1d1a, { rim: 0x4a3530, transparent: true, opacity: 0 }) };
+    const mats = { skin: skinMaterial(0x2c1d1a, { rim: 0x4a3530, transparent: true, opacity: 0, wet: 0.9 }) };
     mats.bone = new THREE.MeshLambertMaterial({ color: 0xcfc2a4, emissive: 0x1a160e, transparent: true, opacity: 0 });
+    mats.hair = hairMaterial({ transparent: true, opacity: 0 });
+    mats.mouth = new THREE.MeshBasicMaterial({ color: 0x030101, transparent: true, opacity: 0 });
     super(game, pos, { body: BODY.tall, mats });
     this.type = 'mangled';
     this.voice?.stop(); this.voice = game.audio.entityVoice('mangled');
     this.walkSpeed = 1.1; this.chaseSpeed = game.cfg.chaseSpeed || 3.7;
-    addMouth(this.rig, BODY.tall, mats, { teeth: 8, open: 0.7 });
+    this.rig.jaw.rotation.x = 0.7;
     this.eyes.material.color.set(0xd8e0ff);
     this.baseLean = 0.55;
     this.alpha = 0; this.fading = false;
@@ -566,12 +645,18 @@ export class Mangled extends Wanderer {
     r.jaw.rotation.x = 0.6 + Math.abs(Math.sin(t * 5)) * 0.3;
     r.legL.knee.rotation.x += 0.35;
   }
+  deathPose(T) {
+    super.deathPose(T);
+    this.alpha = 1;
+    for (const k of ['skin', 'bone', 'hair', 'mouth']) this.mats[k].opacity = 1;
+    this.mats.skin.depthWrite = true;
+  }
   // 霧の中にしか姿を保てない
   update(dt, t) {
     super.update(dt, t);
     const want = this.fading ? 0 : 1;
     this.alpha += (want - this.alpha) * Math.min(1, dt * 1.5);
-    this.mats.skin.opacity = this.alpha; this.mats.bone.opacity = this.alpha;
+    this.mats.skin.opacity = this.alpha; this.mats.bone.opacity = this.alpha; this.mats.hair.opacity = this.alpha; this.mats.mouth.opacity = this.alpha;
     this.mats.skin.depthWrite = this.alpha > 0.95;
     this.eyes.material.opacity *= this.alpha;
     if (this.fading && this.alpha < 0.03) this.gone = true;

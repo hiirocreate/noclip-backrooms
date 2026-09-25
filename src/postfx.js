@@ -13,6 +13,11 @@ const HorrorShader = {
     insanity: { value: 0 },  // 0..1 正気度の低さ
     grain: { value: 1 },
     flash: { value: 0 },
+    ghost: { value: 0 },     // 0..1 二重に見える(正気度低下)
+    pulse: { value: 0 },     // 0..1 鼓動に合わせて視界の端が暗くなる
+    invert: { value: 0 },    // 0..1 一瞬の反転(幻覚)
+    blood: { value: 0 },     // 0..1 画面の端から赤く染まる(捕まった瞬間)
+    blackout: { value: 0 },  // 0..1 一瞬の暗転(正気度低下)
     tint: { value: new THREE.Vector3(1, 1, 1) },
   },
   vertexShader: /* glsl */`
@@ -21,7 +26,7 @@ const HorrorShader = {
   `,
   fragmentShader: /* glsl */`
     uniform sampler2D tDiffuse;
-    uniform float time, fear, insanity, grain, flash;
+    uniform float time, fear, insanity, grain, flash, ghost, pulse, invert, blood, blackout;
     uniform vec3 tint;
     varying vec2 vUv;
     float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
@@ -40,6 +45,12 @@ const HorrorShader = {
       col.r = texture2D(tDiffuse, uv + c * ca).r;
       col.g = texture2D(tDiffuse, uv).g;
       col.b = texture2D(tDiffuse, uv - c * ca).b;
+      // 二重視：少しずれた位置にもう一枚、ゆっくり漂う像を重ねる
+      if (ghost > 0.001) {
+        vec2 go = vec2(sin(time * 0.73), cos(time * 0.51)) * 0.018 * ghost + vec2(0.006, 0.0) * ghost;
+        vec3 g2 = texture2D(tDiffuse, uv + go).rgb;
+        col = mix(col, max(col, g2 * 1.05), 0.55 * ghost);
+      }
       col *= tint;
       // 彩度低下
       float l = dot(col, vec3(0.299, 0.587, 0.114));
@@ -48,12 +59,20 @@ const HorrorShader = {
       // 周辺減光
       float vig = smoothstep(0.85, 0.2 - fear * 0.1, length(c * vec2(1.25, 1.0)));
       col *= mix(0.25, 1.0, vig);
+      // 鼓動に合わせて視界が狭まる(トンネル視)
+      float rr = length(c * vec2(1.3, 1.0));
+      col *= 1.0 - pulse * smoothstep(0.18, 0.62, rr) * 0.85;
+      // 端から血がにじむように赤くなる
+      float bl = blood * smoothstep(0.2, 0.75, rr + (hash(floor(uv * 60.0)) - 0.5) * 0.08);
+      col = mix(col, vec3(0.35, 0.0, 0.01) + col * vec3(0.6, 0.05, 0.05), bl);
       // フィルムノイズ
       float n = hash(uv * vec2(1920.0, 1080.0) + fract(time * 7.0) * 100.0) - 0.5;
       col += n * ((0.012 + fear * 0.03 + w * 0.02) + col * (0.22 + fear * 0.2)) * grain;
       // 走査線
       col *= 1.0 - 0.04 * grain * sin(uv.y * 900.0 + time * 30.0);
       col += flash;
+      col = mix(col, vec3(1.0) - col, invert);
+      col *= 1.0 - blackout;
       gl_FragColor = vec4(col, 1.0);
     }
   `,

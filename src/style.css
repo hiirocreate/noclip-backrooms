@@ -236,3 +236,49 @@ body.portrait .tbtn.use { width: 100%; height: 44px; }
 input, select, textarea { font-size: 16px !important; }
 button { touch-action: manipulation; }
 .update-hint { font-size: 11px; opacity: .6; margin-top: 8px; }
+
+/* ---------- v1.3.2 捕まった瞬間 / 正気度の演出 ---------- */
+#scare.bite {
+  background: radial-gradient(ellipse at center, rgba(0,0,0,0) 45%, rgba(90,0,0,.45) 80%, rgba(20,0,0,.9) 100%);
+  mix-blend-mode: normal;
+  animation: bite 1.2s linear forwards;
+}
+@keyframes bite {
+  0%, 16% { opacity: 0; }
+  18% { opacity: .85; }
+  24% { opacity: .4; }
+  40% { opacity: .65; }
+  100% { opacity: .75; }
+}
+#halluc { position: fixed; inset: 0; pointer-events: none; z-index: 8; overflow: hidden; }
+#halluc span {
+  position: absolute; color: rgba(235,225,225,.85); font-size: 22px; letter-spacing: .35em; white-space: nowrap;
+  text-shadow: 0 0 6px rgba(160,0,0,.9), 3px 0 rgba(255,0,0,.35), -3px 0 rgba(0,160,255,.25);
+  animation: whisper-text .9s steps(6, end) forwards; transform: translate(-50%, -50%);
+}
+@keyframes whisper-text {
+  0% { opacity: 0; filter: blur(3px); }
+  15% { opacity: 1; filter: blur(0); }
+  60% { opacity: .8; transform: translate(-49%, -51%) skewX(-8deg); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.15); filter: blur(4px); }
+}
+#bars.san-warn .bar:first-child span { animation: sanity-shake .6s steps(3) infinite; color: #d9c8ff; }
+#bars.san-warn #bar-sanity { box-shadow: 0 0 8px rgba(184,166,232,.7); }
+#bars.san-crit .bar:first-child span { animation: sanity-shake .25s steps(2) infinite; color: #ff8a8a; }
+#bars.san-crit #bar-sanity { background: #c84a6a; animation: sanity-flicker .7s steps(2) infinite; box-shadow: 0 0 10px rgba(255,60,90,.85); }
+@keyframes sanity-shake { 0% { transform: translate(0); } 33% { transform: translate(-1px, 1px); } 66% { transform: translate(1px, -1px); } }
+@keyframes sanity-flicker { 0%, 70% { opacity: 1; } 71%, 100% { opacity: .35; } }
+
+/* ---------- v1.3.2 スティックだけで走る ---------- */
+#stick-ring {
+  position: absolute; left: -20px; top: -20px; width: 156px; height: 156px; border-radius: 50%;
+  border: 2px dashed rgba(233,220,138,.0); transition: border-color .15s, box-shadow .15s; pointer-events: none;
+}
+#stick-base.active #stick-ring { border-color: rgba(233,220,138,.28); }
+#stick-base.active #stick-ring::after {
+  content: '輪の外まで倒すと走る'; position: absolute; left: 50%; bottom: -22px; transform: translateX(-50%); white-space: nowrap;
+  font-size: 11px; letter-spacing: .2em; color: rgba(233,220,138,.55);
+}
+#stick-base.run #stick-ring { border: 2px solid rgba(255,190,90,.85); box-shadow: 0 0 14px rgba(255,170,60,.45); }
+#stick-base.run #stick-ring::after { content: '走る'; color: rgba(255,200,110,1); }
+#stick-base.run #stick-knob { background: rgba(255,190,90,.55); border-color: rgba(255,210,140,.9); }

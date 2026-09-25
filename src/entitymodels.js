@@ -26,10 +26,12 @@ function limbGeoRaw(len, r0, r1, { seg, bulge, bulgeAt, steps, flat }) {
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;
     let r = r0 + (r1 - r0) * t + bulge * Math.exp(-((t - bulgeAt) ** 2) / 0.012);
+    // 端を細くしぼらない(関節がくびれて球体関節人形のように見えるのを防ぐ)。端は平らに近いふたで閉じる
     const e = Math.min(t, 1 - t) / 0.07;
-    if (e < 1) r *= Math.sqrt(Math.max(0, Math.sin(Math.min(1, e) * Math.PI / 2)));
+    if (e < 1) r *= 0.6 + 0.4 * Math.sqrt(Math.max(0, Math.sin(Math.min(1, e) * Math.PI / 2)));
     prof.push([r, -t * len]);
   }
+  prof.unshift([0.001, 0.004]); prof.push([0.001, -len - 0.004]);
   const g = lathe(prof, seg);
   if (flat !== 1) g.scale(1, 1, flat);
   return g;
@@ -48,7 +50,13 @@ function displace(geo, fn, ao = 14) {
     const d = fn(v, nv) || 0;
     if (d) p.setXYZ(i, v.x + nv.x * d, v.y + nv.y * d, v.z + nv.z * d);
     const c = Math.max(0.15, Math.min(1, col.getX(i) + Math.min(0, d) * ao * 1.6 + Math.max(0, d) * ao * 0.15));
-    col.setXYZ(i, c, c, c);
+    // 大きなまだら：鬱血した紫、腐ったような黄緑、黒ずみ。均一な「人形の肌」に見えないようにする
+    const m1 = noise3(v.x * 2.3 + 3.1, v.y * 2.3, v.z * 2.3 - 1.7), m2 = noise3(v.x * 3.7 - 2.2, v.y * 3.1 + 5, v.z * 3.7);
+    const bruise = Math.max(0, m1 - 0.25) * 1.6, rot = Math.max(0, m2 - 0.3) * 1.4, soot = Math.max(0, -m1 - 0.35) * 1.2;
+    col.setXYZ(i,
+      c * (1 - bruise * 0.2 - rot * 0.1 - soot * 0.45),
+      c * (1 - bruise * 0.42 + rot * 0.05 - soot * 0.45),
+      c * (1 - bruise * 0.12 - rot * 0.35 - soot * 0.4));
   }
   p.needsUpdate = true; col.needsUpdate = true;
   geo.computeVertexNormals();
@@ -69,7 +77,7 @@ function shade(geo, fn) {
   for (let i = 0; i < p.count; i++) {
     v.fromBufferAttribute(p, i);
     const k = fn(v);
-    if (k) { const c = Math.max(0.05, col.getX(i) * (1 - k)); col.setXYZ(i, c, c, c); }
+    if (k) { const f = 1 - k; col.setXYZ(i, Math.max(0.03, col.getX(i) * f), Math.max(0.03, col.getY(i) * f), Math.max(0.03, col.getZ(i) * f)); }
   }
   col.needsUpdate = true;
   return geo;
@@ -124,9 +132,11 @@ function skinTexture(kind = 'skin') {
 }
 
 // 皮膚のマテリアル。輪郭にかすかな光(リムライト)を足して、暗がりでも体の形が浮かぶようにする
-export function skinMaterial(color, { rim = 0x1c1a18, rimPow = 2.6, kind = 'skin', bump = 0.018, emissive = 0x000000, transparent = false, opacity = 1 } = {}) {
+// wet: 濡れたような鈍いてかり(0〜1)。乾いた樹脂のようなマネキン感を消す
+export function skinMaterial(color, { rim = 0x1c1a18, rimPow = 2.6, kind = 'skin', bump = 0.018, emissive = 0x000000, transparent = false, opacity = 1, wet = 0.35 } = {}) {
   const tex = skinTexture(kind);
-  const m = new THREE.MeshLambertMaterial({ color, map: tex, bumpMap: tex, bumpScale: bump, emissive, transparent, opacity, vertexColors: true });
+  const spec = new THREE.Color(0xd8d0c0).multiplyScalar(wet * 0.09);
+  const m = new THREE.MeshPhongMaterial({ color, map: tex, bumpMap: tex, bumpScale: bump, emissive, transparent, opacity, vertexColors: true, specular: spec, shininess: 10 + wet * 16 });
   const rimCol = new THREE.Color(rim);
   m.userData.rim = rimCol;
   m.onBeforeCompile = (sh) => {
@@ -145,9 +155,9 @@ const boneMaterial = () => new THREE.MeshLambertMaterial({ color: 0xcfc2a4, emis
 // 体型のプリセット(身長 2.7 の座標系。実際の大きさは entities.js で縮める)
 export const BODY = {
   // 徘徊者：異様に細長い手足と指
-  tall: { key: 'tall', shoulderY: 2.13, shoulderX: 0.2, hipY: 1.13, hipX: 0.075, upper: 0.62, fore: 0.6, hand: 0.11, finger: 0.24, fingerR: 0.011, thigh: 0.56, shin: 0.55, armR: 0.04, legR: 0.058, chest: 0.155, waist: 0.068, hips: 0.1, torsoLen: 1.0, neck: 0.2, headR: 0.15, headLong: 1.4, sockets: true, ribs: 0.016 },
+  tall: { key: 'tall', shoulderY: 2.13, shoulderX: 0.2, hipY: 1.13, hipX: 0.075, upper: 0.66, fore: 0.66, hand: 0.11, finger: 0.24, fingerR: 0.011, thigh: 0.56, shin: 0.55, armR: 0.04, legR: 0.058, chest: 0.155, waist: 0.068, hips: 0.1, torsoLen: 1.0, neck: 0.2, headR: 0.15, headLong: 1.4, sockets: true, ribs: 0.016 },
   // ボイラー室の主：肩幅が広く、太い腕の猫背
-  bulky: { key: 'bulky', shoulderY: 2.05, shoulderX: 0.34, hipY: 1.05, hipX: 0.13, upper: 0.56, fore: 0.58, hand: 0.16, finger: 0.16, fingerR: 0.022, thigh: 0.52, shin: 0.52, armR: 0.09, legR: 0.1, chest: 0.3, waist: 0.21, hips: 0.19, torsoLen: 1.0, neck: 0.06, headR: 0.16, headLong: 1.1, sockets: true, ribs: 0.004, hunch: 0.6, shoulderK: 1.02, hump: 0.07 },
+  bulky: { key: 'bulky', shoulderY: 2.05, shoulderX: 0.34, hipY: 1.05, hipX: 0.13, upper: 0.56, fore: 0.58, hand: 0.16, finger: 0.16, fingerR: 0.022, thigh: 0.52, shin: 0.52, armR: 0.09, legR: 0.1, chest: 0.3, waist: 0.21, hips: 0.19, torsoLen: 1.0, neck: 0.06, headR: 0.16, headLong: 1.1, sockets: true, ribs: 0.004, hunch: 0.6, shoulderK: 1.02, hump: 0.07, lumps: 0.035 },
   // 顔のない住人：ふつうの人の比率
   human: { key: 'human', shoulderY: 2.2, shoulderX: 0.27, hipY: 1.36, hipX: 0.1, upper: 0.48, fore: 0.44, hand: 0.13, finger: 0.1, fingerR: 0.016, thigh: 0.68, shin: 0.64, armR: 0.06, legR: 0.085, chest: 0.2, waist: 0.15, hips: 0.17, torsoLen: 0.9, neck: 0.12, headR: 0.17, headLong: 1.25, sockets: false, ribs: 0, cloth: true },
   // ダラー：なめらかで特徴のない灰色の人影
@@ -180,6 +190,7 @@ function humanoidGeos(b) {
     }
     if (v.z < 0 && ax < 0.03) d += 0.014 * Math.max(0, Math.sin(v.y * 40)); // 背骨
     if (b.hump && v.z < 0) d += b.hump * g2(v.y + 0.18 * L, 0.16) * g2(v.x, 0.2);           // 盛り上がった背中
+    if (b.lumps) d += b.lumps * Math.max(0, noise3(v.x * 5 + 1, v.y * 5, v.z * 5) - 0.2) * 1.6;  // こぶ・腫れ
     return d;
   }, b.ribs ? 34 : 14);
   ensureColor(G.torso);
@@ -219,12 +230,12 @@ function humanoidGeos(b) {
   }
   G.head = hg;
   G.upper = displace(limbGeo(b.upper, b.armR * 1.05, b.armR * 0.8, { bulge: b.armR * 0.25, bulgeAt: 0.15 }), skin(0.003));
-  G.fore = displace(limbGeo(b.fore + 0.03, b.armR * 0.85, b.armR * 0.55, { bulge: b.armR * (b.hump ? 0.6 : 0.25), bulgeAt: b.hump ? 0.3 : 0.05 }), skin(0.003));
+  G.fore = displace(limbGeo(b.fore + 0.06, b.armR * 0.85, b.armR * 0.55, { bulge: b.armR * (b.hump ? 0.6 : 0.35), bulgeAt: b.hump ? 0.3 : 0.06 }), skin(0.003));
   G.hand = limbGeo(b.hand, b.armR * 0.6, b.armR * 0.8, { seg: 8, flat: 0.45 });
   G.fing1 = limbGeo(b.finger * 0.55, b.fingerR, b.fingerR * 0.85, { seg: 5, steps: 6, bulge: b.fingerR * 0.3, bulgeAt: 0.95 });
   G.fing2 = limbGeo(b.finger * 0.5, b.fingerR * 0.85, b.fingerR * 0.35, { seg: 5, steps: 6 });
   G.thigh = displace(limbGeo(b.thigh + 0.03, b.legR * 1.15, b.legR * 0.7, { bulge: b.legR * 0.2, bulgeAt: 0.95 }), skin(0.003));
-  G.shin = displace(limbGeo(b.shin + 0.02, b.legR * 0.75, b.legR * 0.45, { bulge: b.legR * 0.25, bulgeAt: 0.25 }), skin(0.003));
+  G.shin = displace(limbGeo(b.shin + 0.06, b.legR * 0.75, b.legR * 0.45, { bulge: b.legR * 0.3, bulgeAt: 0.08 }), skin(0.003));
   G.foot = limbGeo(b.legR * 3.2, b.legR * 0.55, b.legR * 0.4, { seg: 7, flat: 0.5 });
   G.jaw = new THREE.SphereGeometry(b.headR * 0.6, 12, 8, 0, Math.PI * 2, Math.PI * 0.5, Math.PI * 0.5);
   G.jaw.scale(1, 0.5, 1.2); ensureColor(G.jaw);
@@ -259,8 +270,7 @@ export function buildHumanoid(b, mats) {
     const shoulder = new THREE.Group(); shoulder.position.set(side * b.shoulderX, -0.08, 0); chest.add(shoulder);
     shoulder.add(mesh(G.upper));
     const elbow = new THREE.Group(); elbow.position.y = -b.upper; shoulder.add(elbow);
-    elbow.add(mesh(G.fore));
-    const ec = mesh(G.joint); ec.scale.setScalar(b.armR * 0.95); elbow.add(ec);
+    const fm = mesh(G.fore); fm.position.y = 0.03; elbow.add(fm);
     const wrist = new THREE.Group(); wrist.position.y = -b.fore; elbow.add(wrist);
     const hand = mesh(G.hand, mats.skin); hand.rotation.y = side * 0.2; wrist.add(hand);
     const fingers = [];
@@ -280,8 +290,7 @@ export function buildHumanoid(b, mats) {
     const hip = new THREE.Group(); hip.position.set(side * b.hipX, 0, 0); body.add(hip);
     hip.add(mesh(G.thigh));
     const knee = new THREE.Group(); knee.position.y = -b.thigh; hip.add(knee);
-    knee.add(mesh(G.shin));
-    const kc = mesh(G.joint); kc.scale.setScalar(b.legR * 0.85); kc.position.z = b.legR * 0.15; knee.add(kc);
+    const sm = mesh(G.shin); sm.position.y = 0.04; knee.add(sm);
     const ankle = new THREE.Group(); ankle.position.y = -b.shin; knee.add(ankle);
     const foot = mesh(G.foot); foot.rotation.x = -Math.PI / 2; foot.position.set(0, -b.legR * 0.2, -b.legR * 0.6); ankle.add(foot);
     legs.push({ hip, knee, ankle });
@@ -294,17 +303,85 @@ export function addMouth(rig, b, mats, { teeth = 10, open = 0.3 } = {}) {
   const jawMesh = new THREE.Mesh(rig.geos.jaw, mats.skin);
   rig.jaw.add(jawMesh);
   rig.jaw.rotation.x = open;
+  const H = b.headR;
+  // 口の中の闇(あごが開くと真っ黒な穴が見える)
+  const cav = new THREE.Mesh(new THREE.SphereGeometry(H * 0.36, 12, 8), mats.mouth || new THREE.MeshBasicMaterial({ color: 0x030101 }));
+  cav.scale.set(1.1, 0.5, 0.75); cav.position.set(0, -H * b.headLong * 0.52, H * 0.56); rig.head.add(cav);
+  const inner = new THREE.Mesh(new THREE.SphereGeometry(H * 0.3, 10, 6), cav.material);
+  inner.scale.set(1, 0.5, 0.9); inner.position.set(0, 0.0, H * 0.3); rig.jaw.add(inner);
+  rig.mouthCav = cav;
   const bm = mats.bone || boneMaterial();
-  const tg = new THREE.ConeGeometry(b.headR * 0.045, b.headR * 0.22, 4);
+  let s = 7 + teeth;
+  const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647);
   for (let i = 0; i < teeth; i++) {
     const a = (i / (teeth - 1) - 0.5) * 2.2;
-    const up = new THREE.Mesh(tg, bm); up.rotation.x = Math.PI;
-    up.position.set(Math.sin(a) * b.headR * 0.5, -b.headR * b.headLong * 0.45, b.headR * 0.15 + Math.cos(a) * b.headR * 0.55);
+    // 長さも太さも向きも不揃いな歯
+    const tg = new THREE.ConeGeometry(H * (0.03 + rnd() * 0.03), H * (0.14 + rnd() * 0.22), 4);
+    const up = new THREE.Mesh(tg, bm); up.rotation.set(Math.PI + (rnd() - 0.5) * 0.5, 0, (rnd() - 0.5) * 0.5);
+    up.position.set(Math.sin(a) * H * 0.5, -H * b.headLong * 0.45, H * 0.15 + Math.cos(a) * H * 0.55);
     rig.head.add(up);
-    const lo = new THREE.Mesh(tg, bm);
-    lo.position.set(Math.sin(a) * b.headR * 0.45, 0.01, Math.cos(a) * b.headR * 0.5);
+    const lo = new THREE.Mesh(tg, bm); lo.rotation.set((rnd() - 0.5) * 0.5, 0, (rnd() - 0.5) * 0.5);
+    lo.position.set(Math.sin(a) * H * 0.45, 0.01, Math.cos(a) * H * 0.5);
     rig.jaw.add(lo);
   }
+}
+
+// 長く垂れた黒髪。前髪が顔を覆い、隙間から目だけが光る
+export function addHair(rig, b, mat, { front = 70, back = 60, len = 0.75, seed = 3 } = {}) {
+  const H = b.headR, HL = b.headLong;
+  let s = seed * 7919 + 13;
+  const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647);
+  const build = (count, th0, th1, phi0, phi1, lenK, rOut) => {
+    const pos = [], idx = [];
+    for (let n = 0; n < count; n++) {
+      const th = th0 + (th1 - th0) * rnd() + (rnd() - 0.5) * 0.1;
+      const ph = phi0 + (phi1 - phi0) * rnd();
+      const sx = Math.sin(th), cz = Math.cos(th);
+      const rx = H * Math.sin(ph), ry = H * HL * Math.cos(ph);
+      const L = len * lenK * (0.55 + rnd() * 0.6);
+      const w = H * (0.07 + rnd() * 0.09);
+      const ro = H * (rOut + rnd() * 0.08);
+      const wav = rnd() * 6, wa = H * (0.02 + rnd() * 0.05);
+      const base = pos.length / 3;
+      // 頭皮に沿って赤道(一番張り出した所)まで下り、そこから真下へ垂れる
+      const pts = [];
+      const A = 5, B = 8, eq = Math.PI / 2 + 0.1;
+      for (let k = 0; k <= A; k++) {
+        const f = ph + (eq - ph) * (k / A), rr = H * (1.02 + (ro / H - 1.02) * (k / A));
+        pts.push([rr * Math.sin(f), H * HL * Math.cos(f) * (rr / H)]);
+      }
+      const [ex, ey] = pts[pts.length - 1];
+      for (let k = 1; k <= B; k++) pts.push([ex * (1 - k / B * 0.08), ey - L * (k / B)]);
+      const N = pts.length - 1;
+      pts.forEach(([out, y], k) => {
+        const t = k / N;
+        const sway = Math.sin(t * 5 + wav) * wa * t;
+        const cx = sx * out + cz * sway, cz2 = cz * out - sx * sway;
+        const hw = w * (1 - t * 0.75) * 0.5;
+        pos.push(cx - cz * hw, y, cz2 + sx * hw, cx + cz * hw, y, cz2 - sx * hw);
+        if (k) { const a = base + (k - 1) * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+      });
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setIndex(idx); g.computeVertexNormals();
+    const m = new THREE.Mesh(g, mat);
+    const grp = new THREE.Group(); grp.position.y = 0; grp.add(m); rig.head.add(grp);
+    return grp;
+  };
+  // 前髪は顔の前にまっすぐ垂れる。後ろ髪は肩まで
+  const clumps = [
+    build(front, -1.2, 1.2, 0.05, 0.6, 1, 1.1),
+    build(Math.round(back / 2), 1.0, 2.4, 0.05, 0.9, 0.8, 1.05),
+    build(Math.round(back / 2), -2.4, -1.0, 0.05, 0.9, 0.8, 1.05),
+    build(Math.round(back / 2), 2.3, 4.0, 0.05, 1.0, 0.85, 1.04),
+  ];
+  rig.hair = clumps;
+  return clumps;
+}
+
+export function hairMaterial(opts = {}) {
+  return new THREE.MeshPhongMaterial({ color: 0x060505, specular: 0x151413, shininess: 25, side: THREE.DoubleSide, ...opts });
 }
 
 /* ---------------- 猟犬 ---------------- */
@@ -344,9 +421,9 @@ function houndGeos() {
   const jaw = new THREE.SphereGeometry(0.08, 14, 8, 0, Math.PI * 2, Math.PI * 0.5, Math.PI * 0.5);
   jaw.scale(0.9, 0.5, 3.1); jaw.translate(0, 0, 0.12);
   houndGeo.jaw = ensureGeo(jaw);
-  houndGeo.upper = displace(limbGeo(0.36, 0.065, 0.04, { bulge: 0.02, bulgeAt: 0.2 }), skin(0.004));
-  houndGeo.lower = limbGeo(0.34, 0.035, 0.026, { bulge: 0.012, bulgeAt: 0.05 });
-  houndGeo.meta = limbGeo(0.2, 0.028, 0.022);
+  houndGeo.upper = displace(limbGeo(0.4, 0.085, 0.045, { bulge: 0.03, bulgeAt: 0.2 }), skin(0.004));
+  houndGeo.lower = displace(limbGeo(0.38, 0.045, 0.03, { bulge: 0.018, bulgeAt: 0.06 }), skin(0.003));
+  houndGeo.meta = limbGeo(0.24, 0.034, 0.024, { bulge: 0.012, bulgeAt: 0.05 });
   houndGeo.paw = limbGeo(0.12, 0.03, 0.02, { seg: 7, flat: 0.6 });
   houndGeo.claw = new THREE.ConeGeometry(0.008, 0.06, 4);
   houndGeo.tail = displace(limbGeo(0.5, 0.03, 0.006, { seg: 6 }), skin(0.003));
